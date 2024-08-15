@@ -145,7 +145,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<IPower
     languageClientConsumers = [
         new ConsoleFeature(logger),
         new ExpandAliasFeature(),
-        new GetCommandsFeature(),
+        new GetCommandsFeature(context),
         new ShowHelpFeature(),
         new ExtensionCommandsFeature(logger),
         new RemoteFilesFeature(),

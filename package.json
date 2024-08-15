@@ -146,6 +146,12 @@
           "id": "PowerShellCommands",
           "name": "Command Explorer",
           "when": "config.powershell.sideBar.CommandExplorerVisibility"
+        },
+        {
+          "id": "PowerShell.CommandInfoView",
+          "name": "Command Info",
+          "when": "config.powershell.sideBar.CommandExplorerVisibility",
+          "type": "webview"
         }
       ]
     },

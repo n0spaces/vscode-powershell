@@ -11,8 +11,28 @@ interface ICommand {
     name: string;
     moduleName: string;
     defaultParameterSet: string;
-    parameterSets: object;
-    parameters: object;
+    parameterSets: CommandParameterSetInfo[];
+    parameters: Record<string, object>;
+}
+
+interface CommandParameterSetInfo {
+    isDefault: boolean,
+    name: string,
+    parameters: CommandParameterInfo[],
+}
+
+interface CommandParameterInfo {
+    aliases: string[];
+    attributes: object[];
+    helpMessage: string;
+    isDynamic: boolean;
+    isMandatory: boolean;
+    name: string;
+    parameterType: string;
+    position: number;
+    valueFromPipeline: boolean;
+    valueFromPipelineByPropertyName: boolean;
+    valueFromRemainingArguments: boolean;
 }
 
 /**
@@ -25,13 +45,14 @@ export const GetCommandRequestType = new RequestType0<ICommand[], void>("powerSh
  * A PowerShell Command listing feature. Implements a treeview control.
  */
 export class GetCommandsFeature extends LanguageClientConsumer {
-    private commands: vscode.Disposable[];
+    private disposables: vscode.Disposable[];
     private commandsExplorerProvider: CommandsExplorerProvider;
     private commandsExplorerTreeView: vscode.TreeView<Command>;
+    private commandInfoViewProvider: CommandInfoViewProvider;
 
-    constructor() {
+    constructor(context: vscode.ExtensionContext) {
         super();
-        this.commands = [
+        this.disposables = [
             vscode.commands.registerCommand("PowerShell.RefreshCommandsExplorer",
                 async () => { await this.CommandExplorerRefresh(); }),
             vscode.commands.registerCommand("PowerShell.InsertCommand", async (item) => { await this.InsertCommand(item); })
@@ -47,11 +68,20 @@ export class GetCommandsFeature extends LanguageClientConsumer {
                 await this.CommandExplorerRefresh();
             }
         });
+
+        this.commandInfoViewProvider = new CommandInfoViewProvider(context.extensionUri);
+        this.disposables.push(
+            vscode.window.registerWebviewViewProvider(CommandInfoViewProvider.viewType, this.commandInfoViewProvider)
+        );
+
+        this.commandsExplorerTreeView.onDidChangeSelection((ev) => {
+            this.commandInfoViewProvider.setCommand(ev.selection.length === 1 ? ev.selection[0] : null);
+        });
     }
 
     public dispose(): void {
-        for (const command of this.commands) {
-            command.dispose();
+        for (const disposable of this.disposables) {
+            disposable.dispose();
         }
     }
 
@@ -123,8 +153,8 @@ class Command extends vscode.TreeItem {
         public readonly Name: string,
         public readonly ModuleName: string,
         public readonly defaultParameterSet: string,
-        public readonly ParameterSets: object,
-        public readonly Parameters: object,
+        public readonly ParameterSets: CommandParameterSetInfo[],
+        public readonly Parameters: Record<string, object>,
         public override readonly collapsibleState = vscode.TreeItemCollapsibleState.None,
     ) {
         super(Name, collapsibleState);
@@ -141,5 +171,60 @@ class Command extends vscode.TreeItem {
     public async getChildren(_element?: any): Promise<Command[]> {
         // Returning an empty array because we need to return something.
         return [];
+    }
+}
+
+type CommandInfoViewMessage =
+    | { type: "commandChanged", command: ICommand | null };
+
+class CommandInfoViewProvider implements vscode.WebviewViewProvider {
+    public static readonly viewType = "PowerShell.CommandInfoView";
+    private view?: vscode.WebviewView;
+
+    constructor(private readonly extensionUri: vscode.Uri) {}
+
+    public resolveWebviewView(
+        webviewView: vscode.WebviewView,
+        _context: vscode.WebviewViewResolveContext,
+        _token: vscode.CancellationToken,
+    ): Thenable<void> | void {
+        this.view = webviewView;
+        this.view.webview.options = {
+
+            // TODO: webview options
+        };
+        this.view.webview.html = this.getHtmlForWebview();
+    }
+
+    public setCommand(command: Command | null): void {
+        void this.postMessage({
+            type: "commandChanged",
+            command: command === null ? null : {
+                name: command.Name,
+                moduleName: command.ModuleName,
+                parameters: command.Parameters,
+                parameterSets: command.ParameterSets,
+                defaultParameterSet: command.defaultParameterSet,
+            }
+        });
+    }
+
+    private async postMessage(message: CommandInfoViewMessage): Promise<void> {
+        await this.view?.webview.postMessage(message);
+    }
+
+    private getHtmlForWebview(): string {
+        return /*html*/ `<!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Command Info</title>
+            </head>
+            <body>
+                <h1>Command Info</h1>
+                <p>Hello, world!</p>
+            </body>
+            </html>
+        `;
     }
 }
