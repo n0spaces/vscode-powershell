@@ -6,6 +6,7 @@ import { RequestType0 } from "vscode-languageclient";
 import { LanguageClient } from "vscode-languageclient/node";
 import { LanguageClientConsumer } from "../languageClientConsumer";
 import { getSettings } from "../settings";
+import { EvaluateRequestType } from "./Console";
 
 export interface ICommand {
     name: string;
@@ -175,11 +176,13 @@ class Command extends vscode.TreeItem {
 }
 
 export type CommandInfoViewMessage =
-    | { type: "commandChanged", command: ICommand };
+    | { type: "commandChanged", command: ICommand }
+    | { type: "submit", action: "run" | "insert" | "copy", commandName: string, parameters: Record<string, string | null> };
 
 class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "PowerShell.CommandInfoView";
     private view?: vscode.WebviewView;
+    private selectedCommand?: Command;
 
     constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -194,9 +197,14 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [this.extensionUri],
         };
         webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
+        webviewView.webview.onDidReceiveMessage(m => this.onMessage(m));
+        webviewView.onDidChangeVisibility(() => {
+            this.selectedCommand && this.setCommand(this.selectedCommand);
+        });
     }
 
     public setCommand(command: Command): void {
+        this.selectedCommand = command;
         void this.postMessage({
             type: "commandChanged",
             command: {
@@ -211,6 +219,36 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
 
     private async postMessage(message: CommandInfoViewMessage): Promise<void> {
         await this.view?.webview.postMessage(message);
+    }
+
+    private async onMessage(message: CommandInfoViewMessage): Promise<void> {
+        if (message.type === "submit") {
+            // Build array of commandName, parameters and values, then join to create full expression
+            const expression = [
+                message.commandName,
+                ...Object.entries(message.parameters)
+                    .flatMap(([name, value]) => [`-${name}`, value])
+                    .filter(s => s !== null), // null values indicate a SwitchParameter
+            ].join(" ");
+
+            switch(message.action) {
+            case "run": {
+                const client = await LanguageClientConsumer.getLanguageClient();
+                await client.sendRequest(EvaluateRequestType, { expression });
+                break;
+            }
+            case "insert": {
+                const editor = vscode.window.activeTextEditor;
+                await editor?.edit(editBuilder => {
+                    editBuilder.replace(editor.selection, expression);
+                });
+                break;
+            }
+            case "copy":
+                await vscode.env.clipboard.writeText(expression);
+                break;
+            }
+        }
     }
 
     private getHtmlForWebview(webview: vscode.Webview): string {
