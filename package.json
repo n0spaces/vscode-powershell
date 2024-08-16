@@ -116,7 +116,7 @@
   ],
   "main": "./dist/extension.js",
   "scripts": {
-    "compile": "esbuild ./src/extension.ts --outdir=dist --sourcemap --bundle --external:vscode --platform=node",
+    "compile": "esbuild ./src/extension.ts ./src/controls/commandInfoWebview.ts --outdir=dist --sourcemap --bundle --external:vscode --platform=node",
     "watch": "npm run compile -- --watch",
     "lint": "eslint src test --ext .ts",
     "package": "vsce package --out out/ --no-gitHubIssueLinking",

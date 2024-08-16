@@ -7,7 +7,7 @@ import { LanguageClient } from "vscode-languageclient/node";
 import { LanguageClientConsumer } from "../languageClientConsumer";
 import { getSettings } from "../settings";
 
-interface ICommand {
+export interface ICommand {
     name: string;
     moduleName: string;
     defaultParameterSet: string;
@@ -75,7 +75,7 @@ export class GetCommandsFeature extends LanguageClientConsumer {
         );
 
         this.commandsExplorerTreeView.onDidChangeSelection((ev) => {
-            this.commandInfoViewProvider.setCommand(ev.selection.length === 1 ? ev.selection[0] : null);
+            ev.selection.length === 1 && this.commandInfoViewProvider.setCommand(ev.selection[0]);
         });
     }
 
@@ -174,8 +174,8 @@ class Command extends vscode.TreeItem {
     }
 }
 
-type CommandInfoViewMessage =
-    | { type: "commandChanged", command: ICommand | null };
+export type CommandInfoViewMessage =
+    | { type: "commandChanged", command: ICommand };
 
 class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "PowerShell.CommandInfoView";
@@ -189,17 +189,17 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         _token: vscode.CancellationToken,
     ): Thenable<void> | void {
         this.view = webviewView;
-        this.view.webview.options = {
-
-            // TODO: webview options
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [this.extensionUri],
         };
-        this.view.webview.html = this.getHtmlForWebview();
+        webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
     }
 
-    public setCommand(command: Command | null): void {
+    public setCommand(command: Command): void {
         void this.postMessage({
             type: "commandChanged",
-            command: command === null ? null : {
+            command: {
                 name: command.Name,
                 moduleName: command.ModuleName,
                 parameters: command.Parameters,
@@ -213,7 +213,11 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         await this.view?.webview.postMessage(message);
     }
 
-    private getHtmlForWebview(): string {
+    private getHtmlForWebview(webview: vscode.Webview): string {
+        const scriptUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this.extensionUri, "dist", "controls", "commandInfoWebview.js")
+        );
+
         return /*html*/ `<!DOCTYPE html>
             <html>
             <head>
@@ -221,8 +225,11 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
                 <title>Command Info</title>
             </head>
             <body>
-                <h1>Command Info</h1>
-                <p>Hello, world!</p>
+                <h1 id="commandName"></h1>
+                <i id="commandModule"></i>
+                <select id="selectParameterSet"></select>
+                <div id="parameterForms"></div>
+                <script src="${scriptUri}"></script>
             </body>
             </html>
         `;

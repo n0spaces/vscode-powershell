@@ -2,6 +2,7 @@
 !*.md
 !*.txt
 !dist/extension.js
+!dist/controls/commandInfoWebview.js
 !docs/
 !examples/
 !media/
