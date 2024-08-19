@@ -25,7 +25,7 @@ interface CommandParameterSetInfo {
 interface CommandParameterInfo {
     aliases: string[];
     attributes: object[];
-    helpMessage: string;
+    helpMessage: string | null;
     isDynamic: boolean;
     isMandatory: boolean;
     name: string;
@@ -256,15 +256,47 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this.extensionUri, "dist", "controls", "commandInfoWebview.js")
         );
 
+        // Install `Tobermory.es6-string-html` to get syntax highlighting below
         return /*html*/ `<!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
                 <title>Command Info</title>
+                <style>
+                    body {
+                        overflow-wrap: break-word;
+                    }
+                    #commandName {
+                        font-size: 1.5em;
+                        margin-block-end: 0.2em;
+                    }
+                    #commandModule {
+                        font-style: italic;
+                        margin-block-end: 0.5em;
+                    }
+                    .parameterInputGroup {
+                        display: flex;
+                        flex-wrap: wrap;
+                        margin: 0.5em 0;
+                    }
+                    label {
+                        margin-right: 0.5em;
+                    }
+                    input[type="text"] {
+                        flex-grow: 1;
+                        flex-basis: 100px;
+                        min-width: 100px;
+                    }
+                    details {
+                        border: solid 1px var(--vscode-dropdown-border);
+                        padding: 0.5em 1em;
+                        margin: 1em 0;
+                    }
+                </style>
             </head>
             <body>
                 <h1 id="commandName"></h1>
-                <i id="commandModule"></i>
+                <div id="commandModule"></div>
                 <select id="selectParameterSet"></select>
                 <div id="parameterForms"></div>
                 <script src="${scriptUri}"></script>
