@@ -13,6 +13,7 @@ declare global {
 
 let vscode: ReturnType<typeof acquireVsCodeApi>;
 
+let welcomeMessage: HTMLElement;
 let elementCommandName: HTMLElement;
 let elementCommandModule: HTMLElement;
 let selectParameterSet: HTMLSelectElement;
@@ -45,6 +46,7 @@ const fallbackParameterSet = {
 document.addEventListener("DOMContentLoaded", () => {
     vscode = acquireVsCodeApi();
 
+    welcomeMessage = document.getElementById("welcomeMessage")!;
     elementCommandName = document.getElementById("commandName")!;
     elementCommandModule = document.getElementById("commandModule")!;
     selectParameterSet = document.getElementById("selectParameterSet") as HTMLSelectElement;
@@ -63,6 +65,7 @@ window.onmessage = (ev: MessageEvent<CommandInfoViewMessage>): void => {
 };
 
 function loadCommand(command: ICommand): void {
+    welcomeMessage.hidden = true;
     commandName = command.name;
     elementCommandName.textContent = command.name;
     elementCommandModule.textContent = command.moduleName;
@@ -129,18 +132,31 @@ function loadCommand(command: ICommand): void {
 
         // Show a message if there are no parameters
         if (form.childElementCount === 0) {
-            form.innerHTML = "<p>There are no parameters.</p>";
-            if (command.moduleName) {
-                form.innerHTML += `<p>You may need to import the ${command.moduleName} module.</p>`;
-                // TODO: Add Import-Module button
+            if (!command.moduleName) {
+                form.innerHTML = "<p>There are no parameters.</p>";
+            } else {
+                const p = document.createElement("p");
+                p.textContent = `There are no parameters. You may need to import the ${command.moduleName} module for the parameters to appear.`;
+
+                const importBtn = document.createElement("button");
+                importBtn.type = "button";
+                importBtn.className = "button-primary";
+                importBtn.style.width = "100%";
+                importBtn.textContent = `Import ${command.moduleName}`;
+                importBtn.onclick = ((): void => {
+                    vscode.postMessage({ type: "importRequested", moduleName: command.moduleName });
+                });
+
+                form.append(p, importBtn);
             }
         }
 
         const submitsDiv = document.createElement("div");
+        submitsDiv.style.margin = "8px 0";
         submitsDiv.innerHTML = /*html*/ `
-            <button type="submit" name="__action" value="run">Run</button>
-            <button type="submit" name="__action" value="insert">Insert</button>
-            <button type="submit" name="__action" value="copy">Copy</button>
+            <button type="submit" class="button-primary" name="__action" value="run">Run</button>
+            <button type="submit" class="button-secondary" name="__action" value="insert">Insert</button>
+            <button type="submit" class="button-secondary" name="__action" value="copy">Copy</button>
         `;
         form.appendChild(submitsDiv);
     }

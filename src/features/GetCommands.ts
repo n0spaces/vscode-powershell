@@ -177,7 +177,8 @@ class Command extends vscode.TreeItem {
 
 export type CommandInfoViewMessage =
     | { type: "commandChanged", command: ICommand }
-    | { type: "submit", action: "run" | "insert" | "copy", commandName: string, parameters: Record<string, string | null> };
+    | { type: "submit", action: "run" | "insert" | "copy", commandName: string, parameters: Record<string, string | null> }
+    | { type: "importRequested", moduleName: string };
 
 class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "PowerShell.CommandInfoView";
@@ -221,33 +222,46 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         await this.view?.webview.postMessage(message);
     }
 
-    private async onMessage(message: CommandInfoViewMessage): Promise<void> {
-        if (message.type === "submit") {
-            // Build array of commandName, parameters and values, then join to create full expression
-            const expression = [
-                message.commandName,
-                ...Object.entries(message.parameters)
-                    .flatMap(([name, value]) => [`-${name}`, value])
-                    .filter(s => s !== null), // null values indicate a SwitchParameter
-            ].join(" ");
+    private async onReceivedSubmitMessage(message: CommandInfoViewMessage): Promise<void> {
+        if (message.type !== "submit") return;
+        // Build array of commandName, parameters and values, then join to create full expression string
+        const expression = [
+            message.commandName,
+            ...Object.entries(message.parameters)
+                .flatMap(([name, value]) => [`-${name}`, value])
+                .filter(s => s !== null), // null values indicate a SwitchParameter
+        ].join(" ");
 
-            switch(message.action) {
-            case "run": {
-                const client = await LanguageClientConsumer.getLanguageClient();
-                await client.sendRequest(EvaluateRequestType, { expression });
-                break;
-            }
-            case "insert": {
-                const editor = vscode.window.activeTextEditor;
-                await editor?.edit(editBuilder => {
-                    editBuilder.replace(editor.selection, expression);
-                });
-                break;
-            }
-            case "copy":
-                await vscode.env.clipboard.writeText(expression);
-                break;
-            }
+        switch(message.action) {
+        case "run": {
+            const client = await LanguageClientConsumer.getLanguageClient();
+            await client.sendRequest(EvaluateRequestType, { expression });
+            return;
+        }
+        case "insert": {
+            const editor = vscode.window.activeTextEditor;
+            await editor?.edit(editBuilder => {
+                editBuilder.replace(editor.selection, expression);
+            });
+            return;
+        }
+        case "copy":
+            await vscode.env.clipboard.writeText(expression);
+            return;
+        }
+    }
+
+    private async onReceivedImportRequest(message: CommandInfoViewMessage): Promise<void> {
+        if (message.type !== "importRequested") return;
+
+        const client = await LanguageClientConsumer.getLanguageClient();
+        await client.sendRequest(EvaluateRequestType, { expression: `Import-Module "${message.moduleName}"` });
+    }
+
+    private async onMessage(message: CommandInfoViewMessage): Promise<void> {
+        switch (message.type) {
+        case "submit": return this.onReceivedSubmitMessage(message);
+        case "importRequested": return this.onReceivedImportRequest(message);
         }
     }
 
@@ -257,6 +271,7 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         );
 
         // Install `Tobermory.es6-string-html` to get syntax highlighting below
+        // TODO: content security policy
         return /*html*/ `<!DOCTYPE html>
             <html>
             <head>
@@ -268,36 +283,78 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
                     }
                     #commandName {
                         font-size: 1.5em;
-                        margin-block-end: 0.2em;
+                        margin-block-end: 4px;
                     }
                     #commandModule {
                         font-style: italic;
-                        margin-block-end: 0.5em;
+                        margin-block-end: 4px;
+                    }
+                    select {
+                        color: var(--vscode-dropdown-foreground);
+                        background-color: var(--vscode-dropdown-background);
+                        border: 1px solid var(--vscode-dropdown-border);
+                        height: 24px;
+                        width: 100%;
+                        margin: 4px 0;
+                        font-family: inherit;
                     }
                     .parameterInputGroup {
                         display: flex;
                         flex-wrap: wrap;
-                        margin: 0.5em 0;
+                        margin: 4px 0;
                     }
                     label {
-                        margin-right: 0.5em;
+                        margin: auto 4px auto 0;
                     }
                     input[type="text"] {
+                        color: var(--vscode-input-foreground);
+                        background-color: var(--vscode-input-background);
+                        border: 1px solid var(--vscode-dropdown-border);
+                        height: 20px;
+                        min-width: 100px;
                         flex-grow: 1;
                         flex-basis: 100px;
-                        min-width: 100px;
+                    }
+                    input[type="checkbox"] {
+                        color: var(--vscode-checkbox-foreground);
+                        background-color: var(--vscode-checkbox-background);
+                        border: 1px solid var(--vscode-checkbox-border);
+                        height: 16px;
+                        width: 16px;
                     }
                     details {
                         border: solid 1px var(--vscode-dropdown-border);
-                        padding: 0.5em 1em;
-                        margin: 1em 0;
+                        padding: 4px 8px;
+                        margin: 8px 0;
+                    }
+                    button {
+                        cursor: pointer;
+                        border: 1px solid var(--vscode-button-border, transparent);
+                        border-radius: 2px;
+                        padding: 4px 6px;
+                        font-family: inherit;
+                    }
+                    .button-primary {
+                        color: var(--vscode-button-foreground);
+                        background-color: var(--vscode-button-background);
+                    }
+                    .button-primary:hover {
+                        background-color: var(--vscode-button-hoverBackground);
+                    }
+                    .button-secondary {
+                        color: var(--vscode-button-secondaryForeground);
+                        background-color: var(--vscode-button-secondaryBackground);
+                    }
+                    .button-secondary:hover {
+                        background-color: var(--vscode-button-secondaryHoverBackground);
                     }
                 </style>
             </head>
             <body>
+                <p id="welcomeMessage">Select a command from the Command Explorer.</p>
                 <h1 id="commandName"></h1>
                 <div id="commandModule"></div>
-                <select id="selectParameterSet"></select>
+                <select id="selectParameterSet" hidden></select>
                 <div id="parameterForms"></div>
                 <script src="${scriptUri}"></script>
             </body>
