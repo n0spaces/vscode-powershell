@@ -3,6 +3,7 @@
 !*.txt
 !dist/extension.js
 !dist/controls/commandInfoWebview.js
+!dist/controls/commandInfoWebview.css
 !docs/
 !examples/
 !media/

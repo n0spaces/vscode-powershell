@@ -56,6 +56,11 @@ details {
     margin: 8px 0;
 }
 
+summary {
+    user-select: none;
+    cursor: pointer;
+}
+
 button {
     cursor: pointer;
     border: 1px solid var(--vscode-button-border, transparent);
@@ -64,12 +69,17 @@ button {
     font-family: inherit;
 }
 
+button:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
 .button-primary {
     color: var(--vscode-button-foreground);
     background-color: var(--vscode-button-background);
 }
 
-.button-primary:hover {
+.button-primary:enabled:hover {
     background-color: var(--vscode-button-hoverBackground);
 }
 
@@ -78,6 +88,6 @@ button {
     background-color: var(--vscode-button-secondaryBackground);
 }
 
-.button-secondary:hover {
+.button-secondary:enabled:hover {
     background-color: var(--vscode-button-secondaryHoverBackground);
 }

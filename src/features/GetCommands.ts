@@ -7,6 +7,8 @@ import { LanguageClient } from "vscode-languageclient/node";
 import { LanguageClientConsumer } from "../languageClientConsumer";
 import { getSettings } from "../settings";
 import { EvaluateRequestType } from "./Console";
+import { sleep } from "../utils";
+import crypto from "crypto";
 
 export interface ICommand {
     name: string;
@@ -43,7 +45,7 @@ interface CommandParameterInfo {
 export const GetCommandRequestType = new RequestType0<ICommand[], void>("powerShell/getCommand");
 
 /**
- * A PowerShell Command listing feature. Implements a treeview control.
+ * A PowerShell Command listing feature. Implements a TreeView and WebviewView control
  */
 export class GetCommandsFeature extends LanguageClientConsumer {
     private disposables: vscode.Disposable[];
@@ -71,12 +73,25 @@ export class GetCommandsFeature extends LanguageClientConsumer {
         });
 
         this.commandInfoViewProvider = new CommandInfoViewProvider(context.extensionUri);
+        this.commandInfoViewProvider.commandExplorerRefresh = (): Promise<void> => this.CommandExplorerRefresh();
         this.disposables.push(
             vscode.window.registerWebviewViewProvider(CommandInfoViewProvider.viewType, this.commandInfoViewProvider)
         );
 
+        // Update the Command Info view when a new command is selected
         this.commandsExplorerTreeView.onDidChangeSelection((ev) => {
-            ev.selection.length === 1 && this.commandInfoViewProvider.setCommand(ev.selection[0]);
+            if (ev.selection.length === 1) {
+                this.commandInfoViewProvider.setCommand(ev.selection[0]);
+            }
+        });
+
+        this.commandsExplorerProvider.onDidChangeTreeData(async () => {
+            // If a command is selected, send the updated command to the Command Info view
+            // Pause for a moment to wait for the selected command to be updated
+            await sleep(500);
+            if (this.commandsExplorerTreeView.selection.length === 1) {
+                this.commandInfoViewProvider.setCommand(this.commandsExplorerTreeView.selection[0]);
+            }
         });
     }
 
@@ -175,15 +190,22 @@ class Command extends vscode.TreeItem {
     }
 }
 
+/** Messages sent to/from the Command Info webview */
 export type CommandInfoViewMessage =
     | { type: "commandChanged", command: ICommand }
     | { type: "submit", action: "run" | "insert" | "copy", commandName: string, parameters: Record<string, string | null> }
     | { type: "importRequested", moduleName: string };
 
+/**
+ * Provider for the Command Info webview view.
+ */
 class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "PowerShell.CommandInfoView";
     private view?: vscode.WebviewView;
     private selectedCommand?: Command;
+
+    // CommandExplorerRefresh function in parent GetCommandsFeature
+    public commandExplorerRefresh?: () => Promise<void>;
 
     constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -191,7 +213,7 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         webviewView: vscode.WebviewView,
         _context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
-    ): Thenable<void> | void {
+    ): void {
         this.view = webviewView;
         webviewView.webview.options = {
             enableScripts: true,
@@ -204,6 +226,7 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
+    /** Update the command in the webview */
     public setCommand(command: Command): void {
         this.selectedCommand = command;
         void this.postMessage({
@@ -218,10 +241,12 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
+    /** Post a message to the webview */
     private async postMessage(message: CommandInfoViewMessage): Promise<void> {
         await this.view?.webview.postMessage(message);
     }
 
+    /** Process the run/insert/copy action requested from the webview */
     private async onReceivedSubmitMessage(message: CommandInfoViewMessage): Promise<void> {
         if (message.type !== "submit") return;
         // Build array of commandName, parameters and values, then join to create full expression string
@@ -229,9 +254,10 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
             message.commandName,
             ...Object.entries(message.parameters)
                 .flatMap(([name, value]) => [`-${name}`, value])
-                .filter(s => s !== null), // null values indicate a SwitchParameter
+                .filter(s => s !== null), // filter out null values for SwitchParameters
         ].join(" ");
 
+        // Process action
         switch(message.action) {
         case "run": {
             const client = await LanguageClientConsumer.getLanguageClient();
@@ -247,17 +273,21 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         }
         case "copy":
             await vscode.env.clipboard.writeText(expression);
+            await vscode.window.showInformationMessage("Command copied to clipboard.");
             return;
         }
     }
 
+    /** Evaluate an Import-Module expression, then refresh the command explorer */
     private async onReceivedImportRequest(message: CommandInfoViewMessage): Promise<void> {
         if (message.type !== "importRequested") return;
 
         const client = await LanguageClientConsumer.getLanguageClient();
         await client.sendRequest(EvaluateRequestType, { expression: `Import-Module "${message.moduleName}"` });
+        this.commandExplorerRefresh && await this.commandExplorerRefresh();
     }
 
+    /** Handle messages received from the webview */
     private async onMessage(message: CommandInfoViewMessage): Promise<void> {
         switch (message.type) {
         case "submit": return this.onReceivedSubmitMessage(message);
@@ -272,7 +302,7 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         const styleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this.extensionUri, "dist", "controls", "commandInfoWebview.css")
         );
-        const nonce = getNonce();
+        const nonce = crypto.randomBytes(16).toString("base64");
 
         // Install `Tobermory.es6-string-html` to get syntax highlighting below
         return /*html*/ `<!DOCTYPE html>
@@ -280,7 +310,7 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
             <head>
                 <meta charset="UTF-8">
                 <title>Command Info</title>
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; img-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
                 <link href="${styleUri}" rel="stylesheet">
             </head>
             <body>
@@ -294,13 +324,4 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
             </html>
         `;
     }
-}
-
-function getNonce(): string {
-    let text = "";
-    const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
 }

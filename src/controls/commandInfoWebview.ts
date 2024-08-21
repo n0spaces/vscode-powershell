@@ -57,6 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
     divParameterForms.onsubmit = onFormSubmit;
 });
 
+// Handle messages sent by the webview provider
 window.onmessage = (ev: MessageEvent<CommandInfoViewMessage>): void => {
     switch (ev.data.type) {
     case "commandChanged":
@@ -65,6 +66,10 @@ window.onmessage = (ev: MessageEvent<CommandInfoViewMessage>): void => {
     }
 };
 
+/**
+ * Create all DOM elements for a command, including the command and module name,
+ * a dropdown of parameter set names, and a form for each parameter set.
+ */
 function loadCommand(command: ICommand): void {
     welcomeMessage.hidden = true;
     commandName = command.name;
@@ -86,7 +91,7 @@ function loadCommand(command: ICommand): void {
         // Create <form> for parameters in this ParameterSet
         const form = document.createElement("form");
         form.name = parameterSet.name;
-        form.hidden = !(parameterSet.isDefault || command.parameterSets.length === 1);
+        form.hidden = !isDefault;
         forms.push(form);
 
         const commonParametersContainer = document.createElement("details");
@@ -103,6 +108,7 @@ function loadCommand(command: ICommand): void {
             parameter.valueFromPipeline && tooltipLines.push("Can receive value from pipeline");
             parameterDiv.title = tooltipLines.join("\n");
 
+            // Create input text/checkbox field
             // TODO: Do we want to store a persisted state for these inputs in case the webview is closed?
             const input = document.createElement("input");
             input.name = parameter.name;
@@ -116,7 +122,7 @@ function loadCommand(command: ICommand): void {
 
             parameterDiv.append(label, input);
 
-            // Append common parameters to the details element
+            // Append common parameters to the <details> element
             if (commonParameterNames.includes(parameter.name)) {
                 commonParametersContainer.appendChild(parameterDiv);
             } else {
@@ -124,6 +130,7 @@ function loadCommand(command: ICommand): void {
             }
         }
 
+        // Show common parameters <details> element
         if (commonParametersContainer.childElementCount > 0) {
             const summary = document.createElement("summary");
             summary.textContent = "Common Parameters";
@@ -136,6 +143,8 @@ function loadCommand(command: ICommand): void {
             if (!command.moduleName) {
                 form.innerHTML = "<p>There are no parameters.</p>";
             } else {
+                // Commands appear to have no parameters if the module isn't imported.
+                // TODO: Is there a way we can get the currently imported modules (without evaluating in the console)?
                 const p = document.createElement("p");
                 p.textContent = `There are no parameters. You may need to import the ${command.moduleName} module for the parameters to appear.`;
 
@@ -146,12 +155,19 @@ function loadCommand(command: ICommand): void {
                 importBtn.textContent = `Import ${command.moduleName}`;
                 importBtn.onclick = ((): void => {
                     vscode.postMessage({ type: "importRequested", moduleName: command.moduleName });
+                    importBtn.disabled = true;
                 });
 
                 form.append(p, importBtn);
             }
         }
 
+        // If all forms are hidden (isDefault === false for all parameterSets), show the first form.
+        if (forms.length > 0 && forms.find(f => !f.hidden) === undefined) {
+            forms[0].hidden = false;
+        }
+
+        // Action buttons (run/insert/copy)
         const submitsDiv = document.createElement("div");
         submitsDiv.style.margin = "8px 0";
         submitsDiv.innerHTML = /*html*/ `
@@ -169,6 +185,7 @@ function loadCommand(command: ICommand): void {
     selectParameterSet.hidden = selectParameterSet.options.length <= 1;
 }
 
+/** Show the form for the ParameterSet when the dropdown selection changes */
 function onParameterSetSelectionChanged(): void {
     const selectedOption = selectParameterSet.selectedOptions.item(0);
     const parameterSet = selectedOption?.value;
@@ -179,18 +196,19 @@ function onParameterSetSelectionChanged(): void {
     }
 }
 
+/** Send a "submit" message when one of the action buttons are clicked */
 function onFormSubmit(ev: SubmitEvent): void {
     ev.preventDefault();
     const form = ev.target as HTMLFormElement;
     const formData = new FormData(form, ev.submitter);
 
+    // Collect all parameters with non-empty values
     const parameters: Record<string, string | null> = {};
     const inputs = form.getElementsByTagName("input");
     for (let i = 0; i < inputs.length; i++) {
-        // Only include parameters with non-empty values
         const input = inputs.item(i)!;
         if (input.type === "checkbox" && input.checked)
-            parameters[input.name] = null; // Use null value for
+            parameters[input.name] = null; // Use null value for SwitchParameter
         else if (input.value !== "")
             parameters[input.name] = input.value;
     }
