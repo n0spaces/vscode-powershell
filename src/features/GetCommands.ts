@@ -269,86 +269,19 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         const scriptUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this.extensionUri, "dist", "controls", "commandInfoWebview.js")
         );
+        const styleUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this.extensionUri, "dist", "controls", "commandInfoWebview.css")
+        );
+        const nonce = getNonce();
 
         // Install `Tobermory.es6-string-html` to get syntax highlighting below
-        // TODO: content security policy
         return /*html*/ `<!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
                 <title>Command Info</title>
-                <style>
-                    body {
-                        overflow-wrap: break-word;
-                    }
-                    #commandName {
-                        font-size: 1.5em;
-                        margin-block-end: 4px;
-                    }
-                    #commandModule {
-                        font-style: italic;
-                        margin-block-end: 4px;
-                    }
-                    select {
-                        color: var(--vscode-dropdown-foreground);
-                        background-color: var(--vscode-dropdown-background);
-                        border: 1px solid var(--vscode-dropdown-border);
-                        height: 24px;
-                        width: 100%;
-                        margin: 4px 0;
-                        font-family: inherit;
-                    }
-                    .parameterInputGroup {
-                        display: flex;
-                        flex-wrap: wrap;
-                        margin: 4px 0;
-                    }
-                    label {
-                        margin: auto 4px auto 0;
-                    }
-                    input[type="text"] {
-                        color: var(--vscode-input-foreground);
-                        background-color: var(--vscode-input-background);
-                        border: 1px solid var(--vscode-dropdown-border);
-                        height: 20px;
-                        min-width: 100px;
-                        flex-grow: 1;
-                        flex-basis: 100px;
-                    }
-                    input[type="checkbox"] {
-                        color: var(--vscode-checkbox-foreground);
-                        background-color: var(--vscode-checkbox-background);
-                        border: 1px solid var(--vscode-checkbox-border);
-                        height: 16px;
-                        width: 16px;
-                    }
-                    details {
-                        border: solid 1px var(--vscode-dropdown-border);
-                        padding: 4px 8px;
-                        margin: 8px 0;
-                    }
-                    button {
-                        cursor: pointer;
-                        border: 1px solid var(--vscode-button-border, transparent);
-                        border-radius: 2px;
-                        padding: 4px 6px;
-                        font-family: inherit;
-                    }
-                    .button-primary {
-                        color: var(--vscode-button-foreground);
-                        background-color: var(--vscode-button-background);
-                    }
-                    .button-primary:hover {
-                        background-color: var(--vscode-button-hoverBackground);
-                    }
-                    .button-secondary {
-                        color: var(--vscode-button-secondaryForeground);
-                        background-color: var(--vscode-button-secondaryBackground);
-                    }
-                    .button-secondary:hover {
-                        background-color: var(--vscode-button-secondaryHoverBackground);
-                    }
-                </style>
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
+                <link href="${styleUri}" rel="stylesheet">
             </head>
             <body>
                 <p id="welcomeMessage">Select a command from the Command Explorer.</p>
@@ -356,9 +289,18 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
                 <div id="commandModule"></div>
                 <select id="selectParameterSet" hidden></select>
                 <div id="parameterForms"></div>
-                <script src="${scriptUri}"></script>
+                <script nonce="${nonce}" src="${scriptUri}"></script>
             </body>
             </html>
         `;
     }
+}
+
+function getNonce(): string {
+    let text = "";
+    const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
 }

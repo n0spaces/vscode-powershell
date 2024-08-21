@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+import "./commandInfoWebview.css";
 import type { CommandInfoViewMessage, ICommand } from "../features/GetCommands";
 
 declare global {
