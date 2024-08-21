@@ -115,6 +115,7 @@ function loadCommand(command: ICommand): void {
             input.type = parameter.parameterType.startsWith("System.Management.Automation.SwitchParameter") ? "checkbox" : "text";
             input.id = `(${parameterSet.name})${parameter.name}`;
             input.value = "";
+            input.required = parameter.isMandatory;
 
             const label = document.createElement("label");
             label.htmlFor = input.id;
