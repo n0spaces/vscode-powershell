@@ -199,7 +199,7 @@ export type CommandInfoViewMessage =
 /**
  * Provider for the Command Info webview view.
  */
-class CommandInfoViewProvider implements vscode.WebviewViewProvider {
+export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "PowerShell.CommandInfoView";
     private view?: vscode.WebviewView;
     private selectedCommand?: Command;
@@ -273,7 +273,7 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         }
         case "copy":
             await vscode.env.clipboard.writeText(expression);
-            await vscode.window.showInformationMessage("Command copied to clipboard.");
+            void vscode.window.showInformationMessage("Command copied to clipboard.");
             return;
         }
     }
@@ -288,7 +288,7 @@ class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     }
 
     /** Handle messages received from the webview */
-    private async onMessage(message: CommandInfoViewMessage): Promise<void> {
+    public async onMessage(message: CommandInfoViewMessage): Promise<void> {
         switch (message.type) {
         case "submit": return this.onReceivedSubmitMessage(message);
         case "importRequested": return this.onReceivedImportRequest(message);
