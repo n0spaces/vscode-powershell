@@ -1,13 +1,14 @@
 body {
     overflow-wrap: break-word;
+    padding-bottom: 20px;
 }
 
-#commandName {
+#command-name {
     font-size: 1.5em;
     margin-block-end: 4px;
 }
 
-#commandModule {
+#module-name {
     font-style: italic;
     margin-block-end: 4px;
 }
@@ -22,7 +23,12 @@ select {
     font-family: inherit;
 }
 
-.parameterInputGroup {
+/* Hide dropdown if there is only one parameter set */
+#select-parameter-set:has(> option:only-child) {
+    display: none;
+}
+
+.parameter-input {
     display: flex;
     flex-wrap: wrap;
     margin: 4px 0;
@@ -30,6 +36,11 @@ select {
 
 label {
     margin: auto 4px auto 0;
+}
+
+/* Add an asterisk to the <label> if a parameter is mandatory */
+label:has(+ input[required])::after {
+    content: "*";
 }
 
 input[type="text"] {
@@ -54,6 +65,11 @@ details {
     border: solid 1px var(--vscode-dropdown-border);
     padding: 4px 8px;
     margin: 8px 0;
+}
+
+/* Hide <details> element if its parameters-group is empty */
+details:has(> .parameters-group:empty) {
+    display: none;
 }
 
 summary {

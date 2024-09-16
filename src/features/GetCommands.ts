@@ -18,13 +18,13 @@ export interface ICommand {
     parameters: Record<string, object>;
 }
 
-interface CommandParameterSetInfo {
+export interface CommandParameterSetInfo {
     isDefault: boolean,
     name: string,
     parameters: CommandParameterInfo[],
 }
 
-interface CommandParameterInfo {
+export interface CommandParameterInfo {
     aliases: string[];
     attributes: object[];
     helpMessage: string | null;
@@ -72,8 +72,10 @@ export class GetCommandsFeature extends LanguageClientConsumer {
             }
         });
 
-        this.commandInfoViewProvider = new CommandInfoViewProvider(context.extensionUri);
-        this.commandInfoViewProvider.commandExplorerRefresh = (): Promise<void> => this.CommandExplorerRefresh();
+        this.commandInfoViewProvider = new CommandInfoViewProvider(
+            context.extensionUri,
+            () => this.CommandExplorerRefresh(),
+        );
         this.disposables.push(
             vscode.window.registerWebviewViewProvider(CommandInfoViewProvider.viewType, this.commandInfoViewProvider)
         );
@@ -190,11 +192,17 @@ class Command extends vscode.TreeItem {
     }
 }
 
+interface CommandInfoSubmitPayload {
+    action: "run" | "insert" | "copy";
+    commandName: string;
+    parameters: [name: string, value: string | boolean][];
+}
+
 /** Messages sent to/from the Command Info webview */
 export type CommandInfoViewMessage =
-    | { type: "commandChanged", command: ICommand }
-    | { type: "submit", action: "run" | "insert" | "copy", commandName: string, parameters: Record<string, string | null> }
-    | { type: "importRequested", moduleName: string };
+    | { type: "commandChanged", payload: { command: ICommand } }
+    | { type: "submit", payload: CommandInfoSubmitPayload }
+    | { type: "importRequested", payload: { moduleName: string } };
 
 /**
  * Provider for the Command Info webview view.
@@ -204,10 +212,10 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     private view?: vscode.WebviewView;
     private selectedCommand?: Command;
 
-    // CommandExplorerRefresh function in parent GetCommandsFeature
-    public commandExplorerRefresh?: () => Promise<void>;
-
-    constructor(private readonly extensionUri: vscode.Uri) {}
+    constructor(
+        private readonly extensionUri: vscode.Uri,
+        private commandExplorerRefresh: () => Promise<void>
+    ) {}
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -231,12 +239,14 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         this.selectedCommand = command;
         void this.postMessage({
             type: "commandChanged",
-            command: {
-                name: command.Name,
-                moduleName: command.ModuleName,
-                parameters: command.Parameters,
-                parameterSets: command.ParameterSets,
-                defaultParameterSet: command.defaultParameterSet,
+            payload: {
+                command: {
+                    name: command.Name,
+                    moduleName: command.ModuleName,
+                    parameters: command.Parameters,
+                    parameterSets: command.ParameterSets,
+                    defaultParameterSet: command.defaultParameterSet,
+                }
             }
         });
     }
@@ -247,18 +257,17 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     }
 
     /** Process the run/insert/copy action requested from the webview */
-    private async onReceivedSubmitMessage(message: CommandInfoViewMessage): Promise<void> {
-        if (message.type !== "submit") return;
+    private async onReceivedSubmitMessage(payload: CommandInfoSubmitPayload): Promise<void> {
         // Build array of commandName, parameters and values, then join to create full expression string
         const expression = [
-            message.commandName,
-            ...Object.entries(message.parameters)
+            payload.commandName,
+            ...payload.parameters
                 .flatMap(([name, value]) => [`-${name}`, value])
-                .filter(s => s !== null), // filter out null values for SwitchParameters
+                .filter(s => typeof(s) === "string"), // filter out non-string values for SwitchParameters
         ].join(" ");
 
         // Process action
-        switch(message.action) {
+        switch(payload.action) {
         case "run": {
             const client = await LanguageClientConsumer.getLanguageClient();
             await client.sendRequest(EvaluateRequestType, { expression });
@@ -279,19 +288,21 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     }
 
     /** Evaluate an Import-Module expression, then refresh the command explorer */
-    private async onReceivedImportRequest(message: CommandInfoViewMessage): Promise<void> {
-        if (message.type !== "importRequested") return;
-
+    private async onReceivedImportRequest(module: string): Promise<void> {
         const client = await LanguageClientConsumer.getLanguageClient();
-        await client.sendRequest(EvaluateRequestType, { expression: `Import-Module "${message.moduleName}"` });
-        this.commandExplorerRefresh && await this.commandExplorerRefresh();
+        await client.sendRequest(EvaluateRequestType, { expression: `Import-Module "${module}"` });
+        await this.commandExplorerRefresh();
     }
 
     /** Handle messages received from the webview */
     public async onMessage(message: CommandInfoViewMessage): Promise<void> {
         switch (message.type) {
-        case "submit": return this.onReceivedSubmitMessage(message);
-        case "importRequested": return this.onReceivedImportRequest(message);
+        case "submit":
+            await this.onReceivedSubmitMessage(message.payload);
+            return;
+        case "importRequested":
+            await this.onReceivedImportRequest(message.payload.moduleName);
+            return;
         }
     }
 
@@ -314,11 +325,22 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
                 <link href="${styleUri}" rel="stylesheet">
             </head>
             <body>
-                <p id="welcomeMessage">Select a command from the Command Explorer.</p>
-                <h1 id="commandName"></h1>
-                <div id="commandModule"></div>
-                <select id="selectParameterSet" hidden></select>
-                <div id="parameterForms"></div>
+                <p id="welcome-message">Select a command from the Command Explorer.</p>
+                <form id="command-form" hidden>
+                    <h1 id="command-name"></h1>
+                    <div id="module-name"></div>
+                    <select id="select-parameter-set"></select>
+                    <div id="standard-parameters-group" class="parameters-group"></div>
+                    <details>
+                        <summary>Common Parameters</summary>
+                        <div id="common-parameters-group" class="parameters-group"></div>
+                    </details>
+                    <div class="button-group">
+                        <button type="submit" class="button-primary" name="__action" value="run">Run</button>
+                        <button type="submit" class="button-secondary" name="__action" value="insert">Insert</button>
+                        <button type="submit" class="button-secondary" name="__action" value="copy">Copy</button>
+                    </div>
+                </form>
                 <script nonce="${nonce}" src="${scriptUri}"></script>
             </body>
             </html>
