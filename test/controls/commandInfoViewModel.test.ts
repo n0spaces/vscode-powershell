@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { ICommand } from "../../src/features/GetCommands";
+import { CommandInfoViewMessage, ICommand } from "../../src/features/GetCommands";
 import { CommandInfoViewModel } from "../../src/controls/commandInfoViewModel";
 import * as sinon from "sinon";
 import * as assert from "assert";
@@ -210,7 +210,7 @@ const sampleParameterSetInputs = {
     ],
 };
 
-describe("Command Info view-model", function() {
+describe("CommandInfoViewModel", function() {
     const fakeView = {
         setCommandElements: sinon.fake(),
         setParameterInputs: sinon.fake(),
@@ -258,5 +258,182 @@ describe("Command Info view-model", function() {
             fakeView.setParameterInputs,
             sinon.match.array.deepEquals(sampleParameterSetInputs.Path), // Path parameter set only
         );
+    });
+
+    it("Should add __AllParameterSets if there are no parameterSets", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        const emptyCommand: ICommand = {
+            name: "Invoke-SampleCommand",
+            moduleName: "SampleModule",
+            parameters: {/*...*/},
+            parameterSets: [],
+            defaultParameterSet: "",
+        };
+        vm.onCommandChanged(emptyCommand);
+        assert.strictEqual(vm.selectedParameterSet, "__AllParameterSets");
+        assert.deepStrictEqual(vm.parameterSetInputs, { __AllParameterSets: [] });
+    });
+
+    it("Should set selectedParameterSet even if there is no default", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+
+        // Command where defaultParameterSet is empty, but the Bar parameterSet has isDefault set to true.
+        // selectedParameterSet should be Bar.
+        const commandDefaultParameterSetEmpty: ICommand = {
+            name: "Invoke-SampleCommand",
+            moduleName: "SampleModule",
+            parameters: {/*...*/},
+            parameterSets: [
+                { name: "Foo", isDefault: false, parameters: [] },
+                { name: "Bar", isDefault: true, parameters: [] },
+            ],
+            defaultParameterSet: "",
+        };
+        vm.onCommandChanged(commandDefaultParameterSetEmpty);
+        assert.strictEqual(vm.selectedParameterSet, "Bar");
+
+        // Command where there is no default parameterSet.
+        // selectedParameterSet should be the first one.
+        const commandWithoutDefaultParameterSet = {
+            ...commandDefaultParameterSetEmpty,
+            parameterSets: [
+                { name: "Foo", isDefault: false, parameters: [] },
+                { name: "Bar", isDefault: false, parameters: [] },
+            ],
+        };
+        vm.onCommandChanged(commandWithoutDefaultParameterSet);
+        assert.strictEqual(vm.selectedParameterSet, "Foo");
+    });
+
+    it("Should call setParameterInputs on onSelectedParameterSetChanged", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        vm.onMessage({ type: "commandChanged", payload: { command: sampleCommand } });
+        fakeView.setParameterInputs.resetHistory();
+
+        vm.onSelectedParameterSetChanged("LiteralPath");
+        assert.strictEqual(vm.selectedParameterSet, "LiteralPath");
+        sinon.assert.calledWithMatch(
+            fakeView.setParameterInputs,
+            sinon.match.array.deepEquals(sampleParameterSetInputs.LiteralPath),
+        );
+
+        vm.onSelectedParameterSetChanged("Path");
+        assert.strictEqual(vm.selectedParameterSet, "Path");
+        sinon.assert.calledWithMatch(
+            fakeView.setParameterInputs,
+            sinon.match.array.deepEquals(sampleParameterSetInputs.Path),
+        );
+    });
+
+    it("Should update values for selected parameterSet on onParameterValueChanged", function() {
+        const expectedParameterSetInputs = {
+            Path: [...sampleParameterSetInputs.Path],
+            LiteralPath: [...sampleParameterSetInputs.LiteralPath]
+        };
+
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        vm.onMessage({ type: "commandChanged", payload: { command: sampleCommand } });
+
+        vm.onParameterValueChanged("Path", "foo.txt");
+        expectedParameterSetInputs.Path[0] = {
+            name: "Path",
+            required: true,
+            common: false,
+            tooltip: "Type: System.String[]\nPosition: 0\nMandatory\nCan receive value from pipeline",
+            inputType: "text",
+            value: "foo.txt",
+        };
+        assert.deepStrictEqual(vm.parameterSetInputs, expectedParameterSetInputs);
+
+        vm.onParameterValueChanged("Verbose", true);
+        expectedParameterSetInputs.Path[1] = {
+            name: "Verbose",
+            required: false,
+            common: true,
+            tooltip: "Type: System.Management.Automation.SwitchParameter\nOptional",
+            inputType: "checkbox",
+            value: true,
+        };
+        assert.deepStrictEqual(vm.parameterSetInputs, expectedParameterSetInputs);
+
+        vm.onSelectedParameterSetChanged("LiteralPath");
+        vm.onParameterValueChanged("LiteralPath", "bar.txt");
+        expectedParameterSetInputs.LiteralPath[0] = {
+            name: "LiteralPath",
+            required: true,
+            common: false,
+            tooltip: "Type: System.String[]\nPosition: 0\nMandatory",
+            inputType: "text",
+            value: "bar.txt",
+        };
+        assert.deepStrictEqual(vm.parameterSetInputs, expectedParameterSetInputs);
+
+        vm.onParameterValueChanged("WhatIf", true);
+        expectedParameterSetInputs.LiteralPath[3] = {
+            name: "WhatIf",
+            required: false,
+            common: false,
+            tooltip: "Type: System.Management.Automation.SwitchParameter\nOptional",
+            inputType: "checkbox",
+            value: true,
+        };
+        assert.deepStrictEqual(vm.parameterSetInputs, expectedParameterSetInputs);
+    });
+
+    it("Should submit selected parameterSet values on onSubmit", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        vm.onCommandChanged(sampleCommand);
+
+        // Set Path and check Verbose
+        vm.onParameterValueChanged("Path", "foo.txt");
+        vm.onParameterValueChanged("Verbose", true);
+        vm.onSubmit("run");
+
+        const expectedRunMessage: CommandInfoViewMessage = {
+            type: "submit",
+            payload: {
+                action: "run",
+                commandName: "Import-FileWildcard",
+                parameters: [ ["Path", "foo.txt"], ["Verbose", true] ],
+            },
+        };
+        sinon.assert.calledWith(fakeWebviewApi.postMessage, expectedRunMessage);
+
+        // Set Path again and uncheck Verbose
+        vm.onParameterValueChanged("Path", "bar.txt");
+        vm.onParameterValueChanged("Verbose", false);
+        vm.onSubmit("insert");
+
+        const expectedInsertMessage: CommandInfoViewMessage = {
+            type: "submit",
+            payload: {
+                action: "insert",
+                commandName: "Import-FileWildcard",
+                // Should not include Verbose because it was unchecked
+                parameters: [ ["Path", "bar.txt"] ],
+            },
+        };
+        sinon.assert.calledWith(fakeWebviewApi.postMessage, expectedInsertMessage);
+
+        // Change parameterSet then set LiteralPath, OutVariable and check WhatIf
+        vm.onSelectedParameterSetChanged("LiteralPath");
+        vm.onParameterValueChanged("LiteralPath", "baz.txt");
+        vm.onParameterValueChanged("OutVariable", "myvar");
+        vm.onParameterValueChanged("WhatIf", true);
+        vm.onSubmit("copy");
+
+        const expectedCopyMessage: CommandInfoViewMessage = {
+            type: "submit",
+            payload: {
+                action: "copy",
+                commandName: "Import-FileWildcard",
+                parameters: [
+                    ["LiteralPath", "baz.txt"],
+                    ["OutVariable", "myvar"],
+                    ["WhatIf", true],
+                ],
+            },
+        };
+        sinon.assert.calledWith(fakeWebviewApi.postMessage, expectedCopyMessage);
     });
 });

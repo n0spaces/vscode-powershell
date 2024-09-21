@@ -105,14 +105,14 @@ export class CommandInfoViewModel {
     onCommandChanged(command: ICommand): void {
         this.command = command;
 
-        this.parameterSetInputs = {};
-        for (const parameterSet of command.parameterSets) {
-            this.parameterSetInputs[parameterSet.name] = parameterSet.parameters.map(createParameterInputObject);
-        }
-
         // Set fallback if parameterSets is empty
         if (command.parameterSets.length === 0) {
             command.parameterSets.push({ name: "__AllParameterSets", isDefault: true, parameters: [] });
+        }
+
+        this.parameterSetInputs = {};
+        for (const parameterSet of command.parameterSets) {
+            this.parameterSetInputs[parameterSet.name] = parameterSet.parameters.map(createParameterInputObject);
         }
 
         this.selectedParameterSet = command.defaultParameterSet;
