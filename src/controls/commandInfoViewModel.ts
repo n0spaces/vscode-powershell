@@ -94,10 +94,10 @@ export class CommandInfoViewModel {
 
     constructor(private vscodeApi: VsCodeWebviewApi, private view: CommandInfoViewFuncs) { }
 
-    onMessage(ev: MessageEvent<CommandInfoViewMessage>): void {
-        switch (ev.data.type) {
+    onMessage(data: CommandInfoViewMessage): void {
+        switch (data.type) {
         case "commandChanged":
-            this.onCommandChanged(ev.data.payload.command);
+            this.onCommandChanged(data.payload.command);
             return;
         }
     }

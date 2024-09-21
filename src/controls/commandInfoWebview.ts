@@ -26,7 +26,7 @@ const viewModel = new CommandInfoViewModel(
 );
 
 // Pass webview messages to viewModel
-window.addEventListener("message", (m) => { viewModel.onMessage(m); });
+window.addEventListener("message", (m) => { viewModel.onMessage(m.data); });
 
 // Notify viewModel when the selected parameter set changes
 selectParameterSet.addEventListener("change", (ev) => {

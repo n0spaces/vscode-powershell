@@ -6,15 +6,20 @@ import * as vscode from "vscode";
 import { CommandInfoViewMessage, CommandInfoViewProvider } from "../../src/features/GetCommands";
 
 describe("GetCommands feature", function() {
-    const provider = new CommandInfoViewProvider(vscode.Uri.file(process.env.__TEST_EXTENSION_DEVELOPMENT_PATH!));
+    const provider = new CommandInfoViewProvider(vscode.Uri.file("blah"), () => Promise.resolve());
 
     describe("Command Info 'insert' action", function () {
         let document: vscode.TextDocument;
         const message: CommandInfoViewMessage = {
             type: "submit",
-            action: "insert",
-            commandName: "Invoke-Example",
-            parameters: { "Switch": null, "Foo": "$Bar" },
+            payload: {
+                action: "insert",
+                commandName: "Invoke-Example",
+                parameters: [
+                    ["Switch", true],
+                    ["Foo", "$Bar"],
+                ],
+            }
         };
         const expectedText = "Invoke-Example -Switch -Foo $Bar";
 
@@ -38,9 +43,14 @@ describe("GetCommands feature", function() {
     describe("Command Info 'copy' action", function () {
         const message: CommandInfoViewMessage = {
             type: "submit",
-            action: "copy",
-            commandName: "ConvertTo-Json",
-            parameters: { InputObject: "foo,bar,baz", Compress: null },
+            payload: {
+                action: "copy",
+                commandName: "ConvertTo-Json",
+                parameters: [
+                    ["InputObject", "foo,bar,baz"],
+                    ["Compress", true],
+                ],
+            }
         };
         const expectedText = "ConvertTo-Json -InputObject foo,bar,baz -Compress";
 
