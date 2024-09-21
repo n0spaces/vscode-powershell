@@ -246,9 +246,34 @@ describe("CommandInfoViewModel", function() {
         sinon.assert.calledWith(fakeView.setCommandElements, {
             commandName: "Import-FileWildcard",
             moduleName: "SampleModule",
+            moduleLoaded: true,
             parameterSets: ["Path", "LiteralPath"],
             selectedParameterSet: "Path",
         });
+    });
+
+    it("Should set moduleLoaded false if command has module and no parameters", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        vm.onCommandChanged({
+            name: "Invoke-Sample",
+            moduleName: "SampleModule",
+            parameters: {},
+            parameterSets: [],
+            defaultParameterSet: "",
+        });
+        sinon.assert.calledWithMatch(fakeView.setCommandElements, { moduleLoaded: false });
+    });
+
+    it("Should set moduleLoaded true if command has no module", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        vm.onCommandChanged({
+            name: "Invoke-Sample",
+            moduleName: "",
+            parameters: {},
+            parameterSets: [],
+            defaultParameterSet: "",
+        });
+        sinon.assert.calledWithMatch(fakeView.setCommandElements, { moduleLoaded: true });
     });
 
     it("Should call setParameterInputs with default parameter set on commandChanged", function() {

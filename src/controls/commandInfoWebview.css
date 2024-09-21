@@ -77,6 +77,13 @@ summary {
     cursor: pointer;
 }
 
+#not-imported-message,
+#no-parameters-message,
+#import-module-button {
+    margin: 10px 0;
+    width: 100%;
+}
+
 button {
     cursor: pointer;
     border: 1px solid var(--vscode-button-border, transparent);

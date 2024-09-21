@@ -15,6 +15,7 @@ declare global {
 export interface CommandInfoSetCommandViewArg {
     commandName: string;
     moduleName: string;
+    moduleLoaded: boolean;
     parameterSets: string[];
     selectedParameterSet: string;
 }
@@ -110,9 +111,11 @@ export class CommandInfoViewModel {
             command.parameterSets.push({ name: "__AllParameterSets", isDefault: true, parameters: [] });
         }
 
+        let hasParameters = false;
         this.parameterSetInputs = {};
         for (const parameterSet of command.parameterSets) {
             this.parameterSetInputs[parameterSet.name] = parameterSet.parameters.map(createParameterInputObject);
+            hasParameters ||= parameterSet.parameters.length > 0;
         }
 
         this.selectedParameterSet = command.defaultParameterSet;
@@ -124,9 +127,15 @@ export class CommandInfoViewModel {
                 ?? command.parameterSets[0].name;
         }
 
+        // If there are no parameters, it's possible the module isn't loaded.
+        // I don't think there's a way to get all the loaded modules in PSES without running a command,
+        // so for now we will display a message that the module _may_ need to be imported.
+        const moduleLoaded = !command.moduleName || hasParameters;
+
         this.view.setCommandElements({
             commandName: command.name,
             moduleName: command.moduleName,
+            moduleLoaded: moduleLoaded,
             parameterSets: command.parameterSets.map((set) => set.name),
             selectedParameterSet: this.selectedParameterSet,
         });
@@ -147,6 +156,16 @@ export class CommandInfoViewModel {
         }
         parameterInput.value = value;
         // TODO: should state be persisted through the webview api?
+    }
+
+    onImportModule(): void {
+        if (this.command === null) {
+            throw new Error("this.command is null");
+        }
+        this.vscodeApi.postMessage({
+            type: "importRequested",
+            payload: { moduleName: this.command.moduleName },
+        });
     }
 
     onSubmit(action: "run" | "insert" | "copy"): void {

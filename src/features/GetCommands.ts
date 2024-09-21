@@ -335,6 +335,11 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
                         <summary>Common Parameters</summary>
                         <div id="common-parameters-group" class="parameters-group"></div>
                     </details>
+                    <div id="no-parameters-message" hidden>There are no parameters.</div>
+                    <div id="not-imported-message" hidden>
+                        <div>You may need to import the module first before parameters are visible here.</div>
+                        <button type="button" id="import-module-button" class="button-primary">Import-Module</button>
+                    </div>
                     <div class="button-group">
                         <button type="submit" class="button-primary" name="__action" value="run">Run</button>
                         <button type="submit" class="button-secondary" name="__action" value="insert">Insert</button>

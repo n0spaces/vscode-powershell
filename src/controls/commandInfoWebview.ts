@@ -17,6 +17,10 @@ const commandNameElement = document.getElementById("command-name")!;
 const moduleNameElement = document.getElementById("module-name")!;
 const selectParameterSet = document.getElementById("select-parameter-set") as HTMLSelectElement;
 
+const noParametersMessage = document.getElementById("no-parameters-message")!;
+const notImportedMessage = document.getElementById("not-imported-message")!;
+const importModuleButton = document.getElementById("import-module-button") as HTMLButtonElement;
+
 const standardParametersGroup = document.getElementById("standard-parameters-group")!;
 const commonParametersGroup = document.getElementById("common-parameters-group")!;
 
@@ -51,6 +55,12 @@ commandForm.addEventListener("submit", (ev) => {
     viewModel.onSubmit(formData.get("__action") as "run" | "insert" | "copy");
 });
 
+// Send import request when Import-Module is clicked
+importModuleButton.addEventListener("click", () => {
+    importModuleButton.disabled = true;
+    viewModel.onImportModule();
+});
+
 /**
  * Set elements in the view that do not change between parameter sets,
  * including the parameter set dropdown, and the command and module names.
@@ -70,6 +80,10 @@ function setCommandElements(arg: CommandInfoSetCommandViewArg): void {
         return opt;
     });
     selectParameterSet.append(...options);
+
+    notImportedMessage.hidden = arg.moduleLoaded;
+    importModuleButton.textContent = `Import-Module ${arg.moduleName}`;
+    importModuleButton.disabled = false;
 }
 
 /**
@@ -109,4 +123,5 @@ function setParameterInputs(parameterInputs: CommandInfoParameterInput[]): void 
     commonParametersGroup.innerHTML = "";
 
     parameterInputs.forEach(createParameterInput);
+    noParametersMessage.hidden = parameterInputs.length > 0;
 }
