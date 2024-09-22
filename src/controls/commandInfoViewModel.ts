@@ -25,6 +25,7 @@ export type CommandInfoParameterInput = {
     required: boolean;
     common: boolean;
     tooltip: string;
+    position: number | null;
 } & (
     | { inputType: "text"; value: string }
     | { inputType: "checkbox"; value: boolean }
@@ -73,10 +74,28 @@ function createParameterInputObject(parameter: CommandParameterInfo): CommandInf
         required: parameter.isMandatory,
         common: commonParameterNames.includes(parameter.name),
         tooltip: tooltip,
+        position: parameter.position >= 0 ? parameter.position : null,
         ...isSwitch
             ? { inputType: "checkbox", value: false }
             : { inputType : "text", value : "" },
     };
+}
+
+/**
+ * Comparer that sorts parameters by increasing position, then non-common parameters by name,
+ * then common parameters by name.
+ */
+export function compareParameterInputObjects(a: CommandInfoParameterInput, b: CommandInfoParameterInput): number {
+    if (a.common !== b.common) {
+        return b.common ? -1 : 1;
+    }
+    if (a.position !== null && b.position !== null) {
+        return a.position - b.position;
+    }
+    if (a.position === null && b.position === null) {
+        return a.name.localeCompare(b.name);
+    }
+    return a.position !== null ? -1 : 1;
 }
 
 /**
@@ -114,7 +133,9 @@ export class CommandInfoViewModel {
         let hasParameters = false;
         this.parameterSetInputs = {};
         for (const parameterSet of command.parameterSets) {
-            this.parameterSetInputs[parameterSet.name] = parameterSet.parameters.map(createParameterInputObject);
+            this.parameterSetInputs[parameterSet.name] = parameterSet.parameters
+                .map(createParameterInputObject)
+                .sort(compareParameterInputObjects);
             hasParameters ||= parameterSet.parameters.length > 0;
         }
 

@@ -1,6 +1,17 @@
 body {
     overflow-wrap: break-word;
-    padding-bottom: 20px;
+    padding: 0 15px 15px;
+}
+
+.vstack:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    row-gap: 8px;
+}
+
+/* Hide empty vstack items so they don't have a row-gap */
+.vstack>*:empty {
+    display: none;
 }
 
 #command-name {
@@ -28,14 +39,20 @@ select {
     display: none;
 }
 
+.parameters-group {
+    display: flex;
+    flex-direction: column;
+    row-gap: 4px;
+}
+
 .parameter-input {
     display: flex;
     flex-wrap: wrap;
-    margin: 4px 0;
 }
 
 label {
-    margin: auto 4px auto 0;
+    margin: auto 0;
+    padding-right: 4px;
 }
 
 /* Add an asterisk to the <label> if a parameter is mandatory */
@@ -43,10 +60,13 @@ label:has(+ input[required])::after {
     content: "*";
 }
 
-input[type="text"] {
+input {
     color: var(--vscode-input-foreground);
     background-color: var(--vscode-input-background);
     border: 1px solid var(--vscode-dropdown-border);
+}
+
+input[type="text"] {
     height: 20px;
     min-width: 100px;
     flex-grow: 1;
@@ -54,11 +74,9 @@ input[type="text"] {
 }
 
 input[type="checkbox"] {
-    color: var(--vscode-checkbox-foreground);
-    background-color: var(--vscode-checkbox-background);
-    border: 1px solid var(--vscode-checkbox-border);
     height: 16px;
     width: 16px;
+    margin-left: 0;
 }
 
 details {
@@ -77,11 +95,12 @@ summary {
     cursor: pointer;
 }
 
-#not-imported-message,
-#no-parameters-message,
-#import-module-button {
-    margin: 10px 0;
-    width: 100%;
+#common-parameters-group {
+    margin-top: 4px;
+}
+
+#not-imported-message {
+    margin-bottom: 8px;
 }
 
 button {

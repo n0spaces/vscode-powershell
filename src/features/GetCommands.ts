@@ -326,9 +326,11 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
             </head>
             <body>
                 <p id="welcome-message">Select a command from the Command Explorer.</p>
-                <form id="command-form" hidden>
-                    <h1 id="command-name"></h1>
-                    <div id="module-name"></div>
+                <form id="command-form" class="vstack" hidden>
+                    <div>
+                        <h1 id="command-name"></h1>
+                        <div id="module-name"></div>
+                    </div>
                     <select id="select-parameter-set"></select>
                     <div id="standard-parameters-group" class="parameters-group"></div>
                     <details>
@@ -336,7 +338,7 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
                         <div id="common-parameters-group" class="parameters-group"></div>
                     </details>
                     <div id="no-parameters-message" hidden>There are no parameters.</div>
-                    <div id="not-imported-message" hidden>
+                    <div id="not-imported-message" class="vstack" hidden>
                         <div>You may need to import the module first before parameters are visible here.</div>
                         <button type="button" id="import-module-button" class="button-primary">Import-Module</button>
                     </div>

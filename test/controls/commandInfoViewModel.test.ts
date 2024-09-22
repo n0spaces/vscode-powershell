@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { CommandInfoViewMessage, ICommand } from "../../src/features/GetCommands";
-import { CommandInfoViewModel } from "../../src/controls/commandInfoViewModel";
+import { CommandInfoViewModel, compareParameterInputObjects } from "../../src/controls/commandInfoViewModel";
 import * as sinon from "sinon";
 import * as assert from "assert";
 
@@ -144,15 +144,17 @@ const sampleParameterSetInputs = {
         {
             name: "Path",
             required: true,
+            position: 0,
             common: false,
             tooltip: "Type: System.String[]\nPosition: 0\nMandatory\nCan receive value from pipeline",
             inputType: "text",
             value: "",
         },
         {
-            name: "Verbose",
+            name: "WhatIf",
             required: false,
-            common: true,
+            position: null,
+            common: false,
             tooltip: "Type: System.Management.Automation.SwitchParameter\nOptional",
             inputType: "checkbox",
             value: false,
@@ -160,15 +162,17 @@ const sampleParameterSetInputs = {
         {
             name: "OutVariable",
             required: false,
+            position: null,
             common: true,
             tooltip: "Type: System.String\nOptional",
             inputType: "text",
             value: "",
         },
         {
-            name: "WhatIf",
+            name: "Verbose",
             required: false,
-            common: false,
+            position: null,
+            common: true,
             tooltip: "Type: System.Management.Automation.SwitchParameter\nOptional",
             inputType: "checkbox",
             value: false,
@@ -178,15 +182,17 @@ const sampleParameterSetInputs = {
         {
             name: "LiteralPath",
             required: true,
+            position: 0,
             common: false,
             tooltip: "Type: System.String[]\nPosition: 0\nMandatory",
             inputType: "text",
             value: "",
         },
         {
-            name: "Verbose",
+            name: "WhatIf",
             required: false,
-            common: true,
+            position: null,
+            common: false,
             tooltip: "Type: System.Management.Automation.SwitchParameter\nOptional",
             inputType: "checkbox",
             value: false,
@@ -194,15 +200,17 @@ const sampleParameterSetInputs = {
         {
             name: "OutVariable",
             required: false,
+            position: null,
             common: true,
             tooltip: "Type: System.String\nOptional",
             inputType: "text",
             value: "",
         },
         {
-            name: "WhatIf",
+            name: "Verbose",
             required: false,
-            common: false,
+            position: null,
+            common: true,
             tooltip: "Type: System.Management.Automation.SwitchParameter\nOptional",
             inputType: "checkbox",
             value: false,
@@ -363,6 +371,7 @@ describe("CommandInfoViewModel", function() {
         expectedParameterSetInputs.Path[0] = {
             name: "Path",
             required: true,
+            position: 0,
             common: false,
             tooltip: "Type: System.String[]\nPosition: 0\nMandatory\nCan receive value from pipeline",
             inputType: "text",
@@ -371,9 +380,10 @@ describe("CommandInfoViewModel", function() {
         assert.deepStrictEqual(vm.parameterSetInputs, expectedParameterSetInputs);
 
         vm.onParameterValueChanged("Verbose", true);
-        expectedParameterSetInputs.Path[1] = {
+        expectedParameterSetInputs.Path[3] = {
             name: "Verbose",
             required: false,
+            position: null,
             common: true,
             tooltip: "Type: System.Management.Automation.SwitchParameter\nOptional",
             inputType: "checkbox",
@@ -386,6 +396,7 @@ describe("CommandInfoViewModel", function() {
         expectedParameterSetInputs.LiteralPath[0] = {
             name: "LiteralPath",
             required: true,
+            position: 0,
             common: false,
             tooltip: "Type: System.String[]\nPosition: 0\nMandatory",
             inputType: "text",
@@ -394,9 +405,10 @@ describe("CommandInfoViewModel", function() {
         assert.deepStrictEqual(vm.parameterSetInputs, expectedParameterSetInputs);
 
         vm.onParameterValueChanged("WhatIf", true);
-        expectedParameterSetInputs.LiteralPath[3] = {
+        expectedParameterSetInputs.LiteralPath[1] = {
             name: "WhatIf",
             required: false,
+            position: null,
             common: false,
             tooltip: "Type: System.Management.Automation.SwitchParameter\nOptional",
             inputType: "checkbox",
@@ -438,7 +450,7 @@ describe("CommandInfoViewModel", function() {
                 parameters: [ ["Path", "bar.txt"] ],
             },
         };
-        sinon.assert.calledWith(fakeWebviewApi.postMessage, expectedInsertMessage);
+        sinon.assert.calledWithMatch(fakeWebviewApi.postMessage, expectedInsertMessage);
 
         // Change parameterSet then set LiteralPath, OutVariable and check WhatIf
         vm.onSelectedParameterSetChanged("LiteralPath");
@@ -454,11 +466,35 @@ describe("CommandInfoViewModel", function() {
                 commandName: "Import-FileWildcard",
                 parameters: [
                     ["LiteralPath", "baz.txt"],
-                    ["OutVariable", "myvar"],
                     ["WhatIf", true],
+                    ["OutVariable", "myvar"],
                 ],
             },
         };
         sinon.assert.calledWith(fakeWebviewApi.postMessage, expectedCopyMessage);
+    });
+
+    it("Sorts parameters correctly", function() {
+        const parameters = [
+            { name: "aaa", position: null, common: true },
+            { name: "yyy", position: null, common: false },
+            { name: "bbb", position: null, common: false },
+            { name: "xxx", position: 1, common: false },
+            { name: "ccc", position: null, common: true },
+            { name: "zzz", position: 0, common: false },
+        ];
+        // @ts-expect-error missing unused props
+        parameters.sort(compareParameterInputObjects);
+
+        // Should sort by position, then uncommon by name, then common by name
+        const expected = [
+            { name: "zzz", position: 0, common: false },
+            { name: "xxx", position: 1, common: false },
+            { name: "bbb", position: null, common: false },
+            { name: "yyy", position: null, common: false },
+            { name: "aaa", position: null, common: true },
+            { name: "ccc", position: null, common: true },
+        ];
+        assert.deepStrictEqual(parameters, expected);
     });
 });
