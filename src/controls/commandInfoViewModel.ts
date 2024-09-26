@@ -12,6 +12,12 @@ declare global {
     function acquireVsCodeApi<T = unknown>(): VsCodeWebviewApi<T>
 }
 
+export interface CommandInfoViewState {
+    command: ICommand | null;
+    selectedParameterSet: string;
+    parameterSetInputs: Record<string, CommandInfoParameterInput[]>;
+}
+
 export interface CommandInfoSetCommandViewArg {
     commandName: string;
     moduleName: string;
@@ -31,9 +37,7 @@ export type CommandInfoParameterInput = {
     | { inputType: "checkbox"; value: boolean }
 );
 
-/**
- * View-side functions that set the DOM elements
- */
+/** View-side functions that set the DOM elements */
 export interface CommandInfoViewFuncs {
     /**
      * View function that sets elements visible for all parameter sets,
@@ -41,9 +45,7 @@ export interface CommandInfoViewFuncs {
      */
     setCommandElements: (arg: CommandInfoSetCommandViewArg) => void;
 
-    /**
-     * View function that replaces existing input elements with the ones given.
-     */
+    /** View function that replaces existing input elements with the ones given. */
     setParameterInputs: (inputs: CommandInfoParameterInput[]) => void;
 }
 
@@ -105,24 +107,84 @@ export function compareParameterInputObjects(a: CommandInfoParameterInput, b: Co
  * The webview API and DOM-related functions are dependency-injected
  * so we can write tests for this class without needing a webview.
  */
-export class CommandInfoViewModel {
-    command: ICommand | null = null;
+export class CommandInfoViewModel implements CommandInfoViewState {
+    command: Readonly<ICommand> | null = null;
     selectedParameterSet = "";
 
     /** Map of ParameterSet names to arrays of parameter input objects */
     parameterSetInputs: Record<string, CommandInfoParameterInput[]> = {};
 
-    constructor(private vscodeApi: VsCodeWebviewApi, private view: CommandInfoViewFuncs) { }
+    constructor(private vscodeApi: VsCodeWebviewApi<CommandInfoViewMessage>, private view: CommandInfoViewFuncs) {
+        vscodeApi.postMessage({ type: "getState" });
+    }
+
+    /** Set command-level elements in the view (command/module name, parameter set options, etc.) */
+    viewSetCommandElements(): void {
+        if (this.command === null) {
+            throw new Error("this.command is null");
+        }
+
+        // If there are no parameters, it's possible the module isn't loaded.
+        // I don't think there's a way to get all the loaded modules in PSES without evaluating a command in the console,
+        // so for now we will display a message that the module _may_ need to be imported.
+        const hasParameters = Object.values(this.parameterSetInputs).flat().length > 0;
+        const moduleLoaded = !this.command.moduleName || hasParameters;
+
+        this.view.setCommandElements({
+            commandName: this.command.name,
+            moduleName: this.command.moduleName,
+            moduleLoaded: moduleLoaded,
+            parameterSets: this.command.parameterSets.map((set) => set.name),
+            selectedParameterSet: this.selectedParameterSet,
+        });
+    }
+
+    /** Set parameter-level elements in the view for the selected parameter set. */
+    viewSetParameterInputs(): void {
+        this.view.setParameterInputs(this.parameterSetInputs[this.selectedParameterSet]);
+    }
+
+    /** Persist state in the webview provider, so values aren't lost if the webview is temporarily closed. */
+    saveState(): void {
+        this.vscodeApi.postMessage({
+            type: "setState",
+            payload: {
+                newState: {
+                    command: this.command,
+                    parameterSetInputs: this.parameterSetInputs,
+                    selectedParameterSet: this.selectedParameterSet,
+                },
+            },
+        });
+    }
 
     onMessage(data: CommandInfoViewMessage): void {
         switch (data.type) {
         case "commandChanged":
             this.onCommandChanged(data.payload.command);
             return;
+        case "getStateResponse":
+            this.onGetStateResponse(data.payload.state);
+            return;
         }
     }
 
+    onGetStateResponse(state: CommandInfoViewState): void {
+        this.command = state.command;
+        this.parameterSetInputs = state.parameterSetInputs;
+        this.selectedParameterSet = state.selectedParameterSet;
+        this.viewSetCommandElements();
+        this.viewSetParameterInputs();
+    }
+
     onCommandChanged(command: ICommand): void {
+        // Skip if the given command is exactly the same as the current one.
+        // This may happen if the view provider tries to send us a command
+        // after we already received it from the presisted state.
+        if (JSON.stringify(command) === JSON.stringify(this.command)) {
+            return;
+        }
+
         this.command = command;
 
         // Set fallback if parameterSets is empty
@@ -130,44 +192,28 @@ export class CommandInfoViewModel {
             command.parameterSets.push({ name: "__AllParameterSets", isDefault: true, parameters: [] });
         }
 
-        let hasParameters = false;
         this.parameterSetInputs = {};
         for (const parameterSet of command.parameterSets) {
             this.parameterSetInputs[parameterSet.name] = parameterSet.parameters
                 .map(createParameterInputObject)
                 .sort(compareParameterInputObjects);
-            hasParameters ||= parameterSet.parameters.length > 0;
         }
 
-        this.selectedParameterSet = command.defaultParameterSet;
-        // Sometimes defaultParameterSet is unset.
+        // Sometimes defaultParameterSet is null or empty.
         // If this happens, find the name of the first parameter set where isDefault is true,
-        // or use the first set's name if there is no default parameter set.
-        if (!this.selectedParameterSet) {
-            this.selectedParameterSet = command.parameterSets.find((set) => set.isDefault)?.name
-                ?? command.parameterSets[0].name;
-        }
+        // or use the first parameter set if there is no default.
+        this.selectedParameterSet = command.defaultParameterSet ||
+            (command.parameterSets.find((set) => set.isDefault)?.name ?? command.parameterSets[0].name);
 
-        // If there are no parameters, it's possible the module isn't loaded.
-        // I don't think there's a way to get all the loaded modules in PSES without running a command,
-        // so for now we will display a message that the module _may_ need to be imported.
-        const moduleLoaded = !command.moduleName || hasParameters;
-
-        this.view.setCommandElements({
-            commandName: command.name,
-            moduleName: command.moduleName,
-            moduleLoaded: moduleLoaded,
-            parameterSets: command.parameterSets.map((set) => set.name),
-            selectedParameterSet: this.selectedParameterSet,
-        });
-
-        this.view.setParameterInputs(this.parameterSetInputs[this.selectedParameterSet]);
+        this.viewSetCommandElements();
+        this.viewSetParameterInputs();
     }
 
     onSelectedParameterSetChanged(selected: string): void {
         if (this.selectedParameterSet === selected) { return; }
         this.selectedParameterSet = selected;
-        this.view.setParameterInputs(this.parameterSetInputs[selected]);
+        this.viewSetParameterInputs();
+        this.saveState();
     }
 
     onParameterValueChanged(name: string, value: string | boolean): void {
@@ -176,7 +222,7 @@ export class CommandInfoViewModel {
             throw new Error(`Parameter ${name} not found in selected parameter set ${this.selectedParameterSet}`);
         }
         parameterInput.value = value;
-        // TODO: should state be persisted through the webview api?
+        this.saveState();
     }
 
     onImportModule(): void {

@@ -8,6 +8,7 @@ import { LanguageClientConsumer } from "../languageClientConsumer";
 import { getSettings } from "../settings";
 import { EvaluateRequestType } from "./Console";
 import { sleep } from "../utils";
+import { CommandInfoViewState } from "../controls/commandInfoViewModel";
 import crypto from "crypto";
 
 export interface ICommand {
@@ -205,7 +206,10 @@ interface CommandInfoSubmitPayload {
 export type CommandInfoViewMessage =
     | { type: "commandChanged", payload: { command: ICommand } }
     | { type: "submit", payload: CommandInfoSubmitPayload }
-    | { type: "importRequested", payload: { moduleName: string } };
+    | { type: "importRequested", payload: { moduleName: string } }
+    | { type: "getState" }
+    | { type: "getStateResponse", payload: { state: CommandInfoViewState }}
+    | { type: "setState", payload: { newState: CommandInfoViewState } };
 
 /**
  * Provider for the Command Info webview view.
@@ -215,16 +219,20 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     private view?: vscode.WebviewView;
     private selectedCommand?: Command;
 
+    /**
+     * Store the webview state here so we don't lose the input values when the view is hidden.
+     *
+     * We use this instead of getState/setState in acquireVsCodeApi
+     * because those functions persist state across restarts.
+     */
+    private webviewState?: CommandInfoViewState;
+
     constructor(
         private readonly extensionUri: vscode.Uri,
         private commandExplorerRefresh: () => Promise<void>
-    ) {}
+    ) { }
 
-    public resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        _context: vscode.WebviewViewResolveContext,
-        _token: vscode.CancellationToken,
-    ): void {
+    public resolveWebviewView(webviewView: vscode.WebviewView): void {
         this.view = webviewView;
         webviewView.webview.options = {
             enableScripts: true,
@@ -260,7 +268,7 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     }
 
     /** Process the run/insert/copy action requested from the webview */
-    private async onReceivedSubmitMessage(payload: CommandInfoSubmitPayload): Promise<void> {
+    private async onSubmitMessage(payload: CommandInfoSubmitPayload): Promise<void> {
         // Build array of commandName, parameters and values, then join to create full expression string
         const expression = [
             payload.commandName,
@@ -291,20 +299,37 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     }
 
     /** Evaluate an Import-Module expression, then refresh the command explorer */
-    private async onReceivedImportRequest(module: string): Promise<void> {
+    private async onImportMessage(module: string): Promise<void> {
         const client = await LanguageClientConsumer.getLanguageClient();
         await client.sendRequest(EvaluateRequestType, { expression: `Import-Module "${module}"` });
         await this.commandExplorerRefresh();
+    }
+
+    private async onGetStateMessage(): Promise<void> {
+        this.webviewState && await this.postMessage({
+            type: "getStateResponse",
+            payload: { state: this.webviewState },
+        });
+    }
+
+    private onSetStateMessage(newState: CommandInfoViewState): void {
+        this.webviewState = newState;
     }
 
     /** Handle messages received from the webview */
     public async onMessage(message: CommandInfoViewMessage): Promise<void> {
         switch (message.type) {
         case "submit":
-            await this.onReceivedSubmitMessage(message.payload);
+            await this.onSubmitMessage(message.payload);
             return;
         case "importRequested":
-            await this.onReceivedImportRequest(message.payload.moduleName);
+            await this.onImportMessage(message.payload.moduleName);
+            return;
+        case "getState":
+            await this.onGetStateMessage();
+            return;
+        case "setState":
+            this.onSetStateMessage(message.payload.newState);
             return;
         }
     }

@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { CommandInfoViewMessage, ICommand } from "../../src/features/GetCommands";
-import { CommandInfoViewModel, compareParameterInputObjects } from "../../src/controls/commandInfoViewModel";
+import { CommandInfoParameterInput, CommandInfoViewModel, compareParameterInputObjects } from "../../src/controls/commandInfoViewModel";
 import * as sinon from "sinon";
 import * as assert from "assert";
 
@@ -10,7 +10,7 @@ import * as assert from "assert";
  * Example command from `examples/PathProcessingWildcards.ps1`,
  * which has common parameters and multiple parameter sets.
  */
-const sampleCommand: ICommand = {
+const sampleCommand: Readonly<ICommand> = {
     name: "Import-FileWildcard",
     moduleName: "SampleModule",
     parameters: {/*...*/},
@@ -139,7 +139,7 @@ const sampleCommand: ICommand = {
  * Expected `parameterSetInputs` value in the view-model
  * when using `sampleCommand` above.
  */
-const sampleParameterSetInputs = {
+const sampleParameterSetInputs: Readonly<Record<string, readonly Readonly<CommandInfoParameterInput>[]>> = {
     Path: [
         {
             name: "Path",
@@ -289,7 +289,7 @@ describe("CommandInfoViewModel", function() {
         vm.onMessage({ type: "commandChanged", payload: { command: sampleCommand } });
         sinon.assert.calledWithMatch(
             fakeView.setParameterInputs,
-            sinon.match.array.deepEquals(sampleParameterSetInputs.Path), // Path parameter set only
+            sinon.match.array.deepEquals([...sampleParameterSetInputs.Path]), // Path parameter set only
         );
     });
 
@@ -347,14 +347,14 @@ describe("CommandInfoViewModel", function() {
         assert.strictEqual(vm.selectedParameterSet, "LiteralPath");
         sinon.assert.calledWithMatch(
             fakeView.setParameterInputs,
-            sinon.match.array.deepEquals(sampleParameterSetInputs.LiteralPath),
+            sinon.match.array.deepEquals([...sampleParameterSetInputs.LiteralPath]),
         );
 
         vm.onSelectedParameterSetChanged("Path");
         assert.strictEqual(vm.selectedParameterSet, "Path");
         sinon.assert.calledWithMatch(
             fakeView.setParameterInputs,
-            sinon.match.array.deepEquals(sampleParameterSetInputs.Path),
+            sinon.match.array.deepEquals([...sampleParameterSetInputs.Path]),
         );
     });
 
@@ -496,5 +496,81 @@ describe("CommandInfoViewModel", function() {
             { name: "ccc", position: null, common: true },
         ];
         assert.deepStrictEqual(parameters, expected);
+    });
+
+    it("Should send getState message and handle response", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+
+        // vm sends getState message
+        sinon.assert.calledWith(fakeWebviewApi.postMessage, { type: "getState" });
+
+        const parameterSetInputsWithValues: Record<string, CommandInfoParameterInput[]> = {
+            Path: [...sampleParameterSetInputs.Path],
+            LiteralPath: [
+                { ...sampleParameterSetInputs.LiteralPath[0], inputType: "text", value: "foo" },
+                { ...sampleParameterSetInputs.LiteralPath[1], inputType: "checkbox", value: true },
+                ...sampleParameterSetInputs.LiteralPath.slice(2),
+            ],
+        };
+
+        // provider responds with getStateResponse
+        const expectedState = {
+            command: sampleCommand,
+            parameterSetInputs: parameterSetInputsWithValues,
+            selectedParameterSet: "LiteralPath",
+        };
+        vm.onMessage({ type: "getStateResponse", payload: { state: expectedState }});
+
+        // vm state should be updated and view should be updated
+        assert.deepStrictEqual(vm.command, sampleCommand);
+        assert.deepStrictEqual(vm.parameterSetInputs, parameterSetInputsWithValues);
+        assert.strictEqual(vm.selectedParameterSet, "LiteralPath");
+        sinon.assert.calledWith(fakeView.setCommandElements, {
+            commandName: "Import-FileWildcard",
+            moduleName: "SampleModule",
+            moduleLoaded: true,
+            parameterSets: ["Path", "LiteralPath"],
+            selectedParameterSet: "LiteralPath",
+        });
+        sinon.assert.calledWith(fakeView.setParameterInputs, parameterSetInputsWithValues.LiteralPath);
+
+        // vm should NOT call getState in the webview api
+        sinon.assert.notCalled(fakeWebviewApi.getState);
+    });
+
+    it("Should send setState message on parameter value change", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        vm.onCommandChanged(sampleCommand);
+        // Ignore getState message
+        fakeWebviewApi.postMessage.resetHistory();
+
+        const expectedState = {
+            command: sampleCommand,
+            parameterSetInputs: {
+                Path: [
+                    { ...sampleParameterSetInputs.Path[0], value: "foo" },
+                    ...sampleParameterSetInputs.Path.slice(1),
+                ],
+                LiteralPath: [...sampleParameterSetInputs.LiteralPath],
+            },
+            selectedParameterSet: "Path",
+        };
+
+        vm.onParameterValueChanged("Path", "foo");
+
+        sinon.assert.calledWith(fakeWebviewApi.postMessage, {
+            type: "setState",
+            payload: { newState: expectedState },
+        });
+
+        vm.onSelectedParameterSetChanged("LiteralPath");
+        expectedState.selectedParameterSet = "LiteralPath";
+        sinon.assert.calledWith(fakeWebviewApi.postMessage, {
+            type: "setState",
+            payload: { newState: expectedState },
+        });
+
+        // vm should NOT call setState in the webview api
+        sinon.assert.notCalled(fakeWebviewApi.setState);
     });
 });
