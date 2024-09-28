@@ -21,7 +21,7 @@ describe("GetCommands feature", function() {
                 cspSource: ""
             },
             onDidDispose: sinon.fake(),
-            visible: false,
+            visible: true,
             onDidChangeVisibility: sinon.fake(),
             show: sinon.fake(),
         };
@@ -70,12 +70,7 @@ describe("GetCommands feature", function() {
             assert.strictEqual(clipboardText, "ConvertTo-Json -InputObject foo,bar,baz -Compress");
         });
 
-        it("Does not respond to getState if there is no state", async function() {
-            await provider.onMessage({ type: "getState" });
-            sinon.assert.notCalled(fakeWebviewView.webview.postMessage);
-        });
-
-        it("Handles setState and getState messages", async function() {
+        it("Updates persisted webview state on 'setState' message", async function() {
             const sampleState = {
                 command: {
                     name: "Invoke-SampleCommand",
@@ -88,36 +83,52 @@ describe("GetCommands feature", function() {
                 selectedParameterSet: "Foo",
             };
             await provider.onMessage({ type: "setState", payload: { newState: sampleState } });
-            await provider.onMessage({ type: "getState" });
 
-            // Should respond getStateResponse with the state received from setState
+            // When the webview becomes visible, the provider should send a setState message with the newly saved state
+            fakeWebviewView.onDidChangeVisibility.lastCall.yield(); // trigger provider.onViewChangedVisibility()
             sinon.assert.calledWith(fakeWebviewView.webview.postMessage, {
-                type: "getStateResponse",
-                payload: { state: sampleState },
+                type: "setState",
+                payload: { newState: sampleState },
             });
         });
 
-        it("Sends 'commandChanged' message on setCommand", function() {
-            // @ts-expect-error partial Command
-            provider.setCommand({
+        it("Sends 'commandChanged' message on setCommand", async function() {
+            const persistedState = { command: null, parameterSetInputs: {}, selectedParameterSet: "" };
+            const selectedCommand = {
                 Name: "Invoke-Sample",
                 ModuleName: "SampleModule",
                 Parameters: {},
                 ParameterSets: [{ name: "Bar", isDefault: true, parameters: [] }],
                 defaultParameterSet: "Bar",
-            });
-            sinon.assert.calledWith(fakeWebviewView.webview.postMessage, {
+            };
+            const expectedMessage = {
                 type: "commandChanged",
-                payload:{
+                payload: {
                     command: {
-                        name: "Invoke-Sample",
-                        moduleName: "SampleModule",
-                        parameters: {},
-                        parameterSets: [{ name: "Bar", isDefault: true, parameters: [] }],
-                        defaultParameterSet: "Bar",
-                    },
-                },
-            });
+                        name: selectedCommand.Name,
+                        moduleName: selectedCommand.ModuleName,
+                        parameters: selectedCommand.Parameters,
+                        parameterSets: selectedCommand.ParameterSets,
+                        defaultParameterSet: selectedCommand.defaultParameterSet,
+                    }
+                }
+            };
+
+            // Update webviewState in the provider so we can test that it's not sent later
+            await provider.onMessage({ type: "setState", payload: { newState: persistedState } });
+
+            // Select a new command in the explorer
+            // @ts-expect-error partial Command
+            provider.setCommand(selectedCommand);
+
+            // Should immediately send commandChanged
+            sinon.assert.calledWith(fakeWebviewView.webview.postMessage, expectedMessage);
+
+            // Should send commandChanged after the webview becomes visible
+            // (Should NOT send setState, since a new command was selected after the state was last updated)
+            fakeWebviewView.webview.postMessage.resetHistory();
+            fakeWebviewView.onDidChangeVisibility.lastCall.yield(); // trigger provider.onViewChangedVisibility()
+            sinon.assert.calledWith(fakeWebviewView.webview.postMessage, expectedMessage);
         });
     });
 });

@@ -37,7 +37,9 @@ export type CommandInfoParameterInput = {
     | { inputType: "checkbox"; value: boolean }
 );
 
-/** View-side functions that set the DOM elements */
+/**
+ * View-side functions that set the DOM elements
+ */
 export interface CommandInfoViewFuncs {
     /**
      * View function that sets elements visible for all parameter sets,
@@ -114,11 +116,14 @@ export class CommandInfoViewModel implements CommandInfoViewState {
     /** Map of ParameterSet names to arrays of parameter input objects */
     parameterSetInputs: Record<string, CommandInfoParameterInput[]> = {};
 
-    constructor(private vscodeApi: VsCodeWebviewApi<CommandInfoViewMessage>, private view: CommandInfoViewFuncs) {
-        vscodeApi.postMessage({ type: "getState" });
-    }
+    constructor(
+        private vscodeApi: VsCodeWebviewApi<CommandInfoViewMessage>,
+        private view: CommandInfoViewFuncs
+    ) { }
 
-    /** Set command-level elements in the view (command/module name, parameter set options, etc.) */
+    /**
+     * Set command-level elements in the view (command/module name, parameter set options, etc.)
+     */
     viewSetCommandElements(): void {
         if (this.command === null) {
             throw new Error("this.command is null");
@@ -139,13 +144,17 @@ export class CommandInfoViewModel implements CommandInfoViewState {
         });
     }
 
-    /** Set parameter-level elements in the view for the selected parameter set. */
+    /**
+     * Set parameter elements in the view for the selected parameter set.
+     */
     viewSetParameterInputs(): void {
         this.view.setParameterInputs(this.parameterSetInputs[this.selectedParameterSet]);
     }
 
-    /** Persist state in the webview provider, so values aren't lost if the webview is temporarily closed. */
-    saveState(): void {
+    /**
+     * Persist state in the webview provider, so values aren't lost if the webview is temporarily closed.
+     */
+    persistState(): void {
         this.vscodeApi.postMessage({
             type: "setState",
             payload: {
@@ -158,18 +167,24 @@ export class CommandInfoViewModel implements CommandInfoViewState {
         });
     }
 
+    /**
+     * Handle message sent by the webview provider.
+     */
     onMessage(data: CommandInfoViewMessage): void {
         switch (data.type) {
         case "commandChanged":
             this.onCommandChanged(data.payload.command);
             return;
-        case "getStateResponse":
-            this.onGetStateResponse(data.payload.state);
+        case "setState":
+            this.onSetState(data.payload.newState);
             return;
         }
     }
 
-    onGetStateResponse(state: CommandInfoViewState): void {
+    /**
+     * Update the current state to the value given by the webview provider.
+     */
+    onSetState(state: CommandInfoViewState): void {
         this.command = state.command;
         this.parameterSetInputs = state.parameterSetInputs;
         this.selectedParameterSet = state.selectedParameterSet;
@@ -177,6 +192,9 @@ export class CommandInfoViewModel implements CommandInfoViewState {
         this.viewSetParameterInputs();
     }
 
+    /**
+     * Generate state for the selected command given by the webview provider.
+     */
     onCommandChanged(command: ICommand): void {
         // Skip if the given command is exactly the same as the current one.
         // This may happen if the view provider tries to send us a command
@@ -209,32 +227,44 @@ export class CommandInfoViewModel implements CommandInfoViewState {
         this.viewSetParameterInputs();
     }
 
+    /**
+     * Called when the selection changes in the parameter set dropdown.
+     */
     onSelectedParameterSetChanged(selected: string): void {
         if (this.selectedParameterSet === selected) { return; }
         this.selectedParameterSet = selected;
         this.viewSetParameterInputs();
-        this.saveState();
+        this.persistState();
     }
 
+    /**
+     * Called when the value changes in a parameter input field.
+     */
     onParameterValueChanged(name: string, value: string | boolean): void {
         const parameterInput = this.parameterSetInputs[this.selectedParameterSet].find((p) => p.name === name);
         if (parameterInput === undefined) {
             throw new Error(`Parameter ${name} not found in selected parameter set ${this.selectedParameterSet}`);
         }
         parameterInput.value = value;
-        this.saveState();
+        this.persistState();
     }
 
+    /**
+     * Called when the import module button is clicked.
+     */
     onImportModule(): void {
         if (this.command === null) {
             throw new Error("this.command is null");
         }
         this.vscodeApi.postMessage({
-            type: "importRequested",
+            type: "import",
             payload: { moduleName: this.command.moduleName },
         });
     }
 
+    /**
+     * Called when one of the submit actions are clicked.
+     */
     onSubmit(action: "run" | "insert" | "copy"): void {
         if (this.command === null) {
             throw new Error("this.command is null");

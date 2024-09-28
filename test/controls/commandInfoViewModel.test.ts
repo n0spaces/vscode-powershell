@@ -498,46 +498,6 @@ describe("CommandInfoViewModel", function() {
         assert.deepStrictEqual(parameters, expected);
     });
 
-    it("Should send getState message and handle response", function() {
-        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
-
-        // vm sends getState message
-        sinon.assert.calledWith(fakeWebviewApi.postMessage, { type: "getState" });
-
-        const parameterSetInputsWithValues: Record<string, CommandInfoParameterInput[]> = {
-            Path: [...sampleParameterSetInputs.Path],
-            LiteralPath: [
-                { ...sampleParameterSetInputs.LiteralPath[0], inputType: "text", value: "foo" },
-                { ...sampleParameterSetInputs.LiteralPath[1], inputType: "checkbox", value: true },
-                ...sampleParameterSetInputs.LiteralPath.slice(2),
-            ],
-        };
-
-        // provider responds with getStateResponse
-        const expectedState = {
-            command: sampleCommand,
-            parameterSetInputs: parameterSetInputsWithValues,
-            selectedParameterSet: "LiteralPath",
-        };
-        vm.onMessage({ type: "getStateResponse", payload: { state: expectedState }});
-
-        // vm state should be updated and view should be updated
-        assert.deepStrictEqual(vm.command, sampleCommand);
-        assert.deepStrictEqual(vm.parameterSetInputs, parameterSetInputsWithValues);
-        assert.strictEqual(vm.selectedParameterSet, "LiteralPath");
-        sinon.assert.calledWith(fakeView.setCommandElements, {
-            commandName: "Import-FileWildcard",
-            moduleName: "SampleModule",
-            moduleLoaded: true,
-            parameterSets: ["Path", "LiteralPath"],
-            selectedParameterSet: "LiteralPath",
-        });
-        sinon.assert.calledWith(fakeView.setParameterInputs, parameterSetInputsWithValues.LiteralPath);
-
-        // vm should NOT call getState in the webview api
-        sinon.assert.notCalled(fakeWebviewApi.getState);
-    });
-
     it("Should send setState message on parameter value change", function() {
         const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
         vm.onCommandChanged(sampleCommand);

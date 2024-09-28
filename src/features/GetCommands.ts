@@ -196,20 +196,29 @@ class Command extends vscode.TreeItem {
     }
 }
 
-interface CommandInfoSubmitPayload {
+/**
+ * Messages passed between CommandInfoViewProvider and CommandInfoViewModel.
+ */
+export type CommandInfoViewMessage =
+    | CommandInfoViewCommandChangedMessage
+    | CommandInfoViewSubmitMessage
+    | CommandInfoViewImportMessage
+    | CommandInfoViewSetStateMessage;
+
+/** Sent to viewmodel when a new command is selected in the command explorer. */
+interface CommandInfoViewCommandChangedMessage { type: "commandChanged"; payload: { command: ICommand } }
+/** Sent to provider when one of the submit actions (run/insert/copy) are triggered in the webview. */
+interface CommandInfoViewSubmitMessage { type: "submit"; payload: CommandInfoViewSubmitMessagePayload }
+/** Sent to provider when the import action is triggered in the webview. */
+interface CommandInfoViewImportMessage { type: "import"; payload: { moduleName: string } }
+/** Bidirectional message sent when the viewmodel or provider should update its current webview state */
+interface CommandInfoViewSetStateMessage { type: "setState"; payload: { newState: CommandInfoViewState } }
+
+interface CommandInfoViewSubmitMessagePayload {
     action: "run" | "insert" | "copy";
     commandName: string;
     parameters: [name: string, value: string | boolean][];
 }
-
-/** Messages sent to/from the Command Info webview */
-export type CommandInfoViewMessage =
-    | { type: "commandChanged", payload: { command: ICommand } }
-    | { type: "submit", payload: CommandInfoSubmitPayload }
-    | { type: "importRequested", payload: { moduleName: string } }
-    | { type: "getState" }
-    | { type: "getStateResponse", payload: { state: CommandInfoViewState }}
-    | { type: "setState", payload: { newState: CommandInfoViewState } };
 
 /**
  * Provider for the Command Info webview view.
@@ -217,7 +226,7 @@ export type CommandInfoViewMessage =
 export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "PowerShell.CommandInfoView";
     private view?: vscode.WebviewView;
-    private selectedCommand?: Command;
+    private selectedCommand?: ICommand;
 
     /**
      * Store the webview state here so we don't lose the input values when the view is hidden.
@@ -225,7 +234,7 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
      * We use this instead of getState/setState in acquireVsCodeApi
      * because those functions persist state across restarts.
      */
-    private webviewState?: CommandInfoViewState;
+    private webviewState: CommandInfoViewState | null = null;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
@@ -240,35 +249,52 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         };
         webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
         webviewView.webview.onDidReceiveMessage(m => this.onMessage(m));
-        webviewView.onDidChangeVisibility(() => {
-            this.selectedCommand && this.setCommand(this.selectedCommand);
-        });
+        webviewView.onDidChangeVisibility(() => this.onViewChangedVisibility());
     }
 
-    /** Update the command in the webview */
-    public setCommand(command: Command): void {
-        this.selectedCommand = command;
-        void this.postMessage({
-            type: "commandChanged",
-            payload: {
-                command: {
-                    name: command.Name,
-                    moduleName: command.ModuleName,
-                    parameters: command.Parameters,
-                    parameterSets: command.ParameterSets,
-                    defaultParameterSet: command.defaultParameterSet,
-                }
-            }
-        });
-    }
-
-    /** Post a message to the webview */
+    /**
+     * Post a message to the webview
+     */
     private async postMessage(message: CommandInfoViewMessage): Promise<void> {
         await this.view?.webview.postMessage(message);
     }
 
-    /** Process the run/insert/copy action requested from the webview */
-    private async onSubmitMessage(payload: CommandInfoSubmitPayload): Promise<void> {
+    /**
+     * Set selectedCommand and update it in the webview
+     */
+    public setCommand(command: Command): void {
+        // Clear existing webview state since a new command was selected
+        this.webviewState = null;
+        this.selectedCommand = {
+            name: command.Name,
+            moduleName: command.ModuleName,
+            parameters: command.Parameters,
+            parameterSets: command.ParameterSets,
+            defaultParameterSet: command.defaultParameterSet,
+        };
+        void this.postMessage({ type: "commandChanged", payload: { command: this.selectedCommand } });
+    }
+
+    /**
+     * If the webview becomes visible, send the persisted state if we have it stored.
+     * Otherwise, send the currently selected command if there is one.
+     */
+    private async onViewChangedVisibility(): Promise<void> {
+        if (!this.view?.visible) {
+            return;
+        }
+        if (this.webviewState) {
+            await this.postMessage({ type: "setState", payload: { newState: this.webviewState } });
+        }
+        else if (this.selectedCommand) {
+            await this.postMessage({ type: "commandChanged", payload: { command: this.selectedCommand } });
+        }
+    }
+
+    /**
+     * Process the run/insert/copy action requested from the webview.
+     */
+    private async onSubmitMessage(payload: CommandInfoViewSubmitMessagePayload): Promise<void> {
         // Build array of commandName, parameters and values, then join to create full expression string
         const expression = [
             payload.commandName,
@@ -298,35 +324,32 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    /** Evaluate an Import-Module expression, then refresh the command explorer */
+    /**
+     * Evaluate an Import-Module expression, then refresh the command explorer.
+     */
     private async onImportMessage(module: string): Promise<void> {
         const client = await LanguageClientConsumer.getLanguageClient();
         await client.sendRequest(EvaluateRequestType, { expression: `Import-Module "${module}"` });
         await this.commandExplorerRefresh();
     }
 
-    private async onGetStateMessage(): Promise<void> {
-        this.webviewState && await this.postMessage({
-            type: "getStateResponse",
-            payload: { state: this.webviewState },
-        });
-    }
-
+    /**
+     * Update the persisted webview state with the value given by the webview.
+     */
     private onSetStateMessage(newState: CommandInfoViewState): void {
         this.webviewState = newState;
     }
 
-    /** Handle messages received from the webview */
+    /**
+     * Handle messages received from the webview.
+     */
     public async onMessage(message: CommandInfoViewMessage): Promise<void> {
         switch (message.type) {
         case "submit":
             await this.onSubmitMessage(message.payload);
             return;
-        case "importRequested":
+        case "import":
             await this.onImportMessage(message.payload.moduleName);
-            return;
-        case "getState":
-            await this.onGetStateMessage();
             return;
         case "setState":
             this.onSetStateMessage(message.payload.newState);
@@ -343,13 +366,17 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         );
         const nonce = crypto.randomBytes(16).toString("base64");
 
+        // Content Security Policy
+        // https://code.visualstudio.com/api/extension-guides/webview#content-security-policy
+        const csp = `default-src 'none'; style-src ${webview.cspSource}; img-src ${webview.cspSource}; script-src 'nonce-${nonce}'`;
+
         // Install `Tobermory.es6-string-html` to get syntax highlighting below
         return /*html*/ `<!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
                 <title>Command Info</title>
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; img-src ${webview.cspSource}; script-src 'nonce-${nonce}'">
+                <meta http-equiv="Content-Security-Policy" content="${csp}">
                 <link href="${styleUri}" rel="stylesheet">
             </head>
             <body>
