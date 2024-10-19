@@ -98,7 +98,6 @@ function createParameterInput(parameterInput: CommandInfoParameterInput): void {
     input.id = `input-${parameterInput.name}`;
     input.name = parameterInput.name;
     input.type = parameterInput.inputType;
-    input.required = parameterInput.required;
     if (parameterInput.inputType === "text") {
         input.value = parameterInput.value;
     } else {
@@ -106,7 +105,7 @@ function createParameterInput(parameterInput: CommandInfoParameterInput): void {
     }
 
     const label = document.createElement("label");
-    label.textContent = parameterInput.name;
+    label.textContent = parameterInput.name + (parameterInput.required ? "*" : "");
     label.htmlFor = input.id;
 
     div.append(label, input);

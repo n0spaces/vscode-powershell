@@ -55,11 +55,6 @@ label {
     padding-right: 4px;
 }
 
-/* Add an asterisk to the <label> if a parameter is mandatory */
-label:has(+ input[required])::after {
-    content: "*";
-}
-
 input {
     color: var(--vscode-input-foreground);
     background-color: var(--vscode-input-background);
