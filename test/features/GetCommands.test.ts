@@ -99,7 +99,11 @@ describe("GetCommands feature", function() {
                 ParameterSets: [{ name: "Bar", isDefault: true, parameters: [] }],
                 defaultParameterSet: "Bar",
             };
-            const expectedMessage = {
+            const expectedStateMessage = {
+                type: "setState",
+                payload: { newState: persistedState },
+            };
+            const expectedCommandMessage = {
                 type: "commandChanged",
                 payload: {
                     command: {
@@ -112,7 +116,7 @@ describe("GetCommands feature", function() {
                 }
             };
 
-            // Update webviewState in the provider so we can test that it's not sent later
+            // Update webviewState in the provider so we can test that it is sent later
             await provider.onMessage({ type: "setState", payload: { newState: persistedState } });
 
             // Select a new command in the explorer
@@ -120,13 +124,16 @@ describe("GetCommands feature", function() {
             provider.setCommand(selectedCommand);
 
             // Should immediately send commandChanged
-            sinon.assert.calledWith(fakeWebviewView.webview.postMessage, expectedMessage);
+            sinon.assert.calledWith(fakeWebviewView.webview.postMessage, expectedCommandMessage);
 
-            // Should send commandChanged after the webview becomes visible
-            // (Should NOT send setState, since a new command was selected after the state was last updated)
             fakeWebviewView.webview.postMessage.resetHistory();
-            fakeWebviewView.onDidChangeVisibility.lastCall.yield(); // trigger provider.onViewChangedVisibility()
-            sinon.assert.calledWith(fakeWebviewView.webview.postMessage, expectedMessage);
+
+            // Should send setState then commandChanged after the webview becomes visible.
+            // Trigger provider.onViewChangedVisibility() and await it so all postMessage calls are complete.
+            await (fakeWebviewView.onDidChangeVisibility.lastCall.yield() as unknown as Promise<void>);
+
+            sinon.assert.calledWith(fakeWebviewView.webview.postMessage, expectedCommandMessage);
+            sinon.assert.calledWith(fakeWebviewView.webview.postMessage, expectedStateMessage);
         });
     });
 });

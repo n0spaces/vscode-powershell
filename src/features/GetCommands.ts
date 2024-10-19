@@ -262,8 +262,6 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
      * Set selectedCommand and update it in the webview
      */
     public setCommand(command: Command): void {
-        // Clear existing webview state since a new command was selected
-        this.webviewState = null;
         this.selectedCommand = {
             name: command.Name,
             moduleName: command.ModuleName,
@@ -285,7 +283,7 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
         if (this.webviewState) {
             await this.postMessage({ type: "setState", payload: { newState: this.webviewState } });
         }
-        else if (this.selectedCommand) {
+        if (this.selectedCommand) {
             await this.postMessage({ type: "commandChanged", payload: { command: this.selectedCommand } });
         }
     }

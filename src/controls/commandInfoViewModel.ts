@@ -225,6 +225,7 @@ export class CommandInfoViewModel implements CommandInfoViewState {
 
         this.viewSetCommandElements();
         this.viewSetParameterInputs();
+        this.persistState();
     }
 
     /**
