@@ -216,8 +216,7 @@ interface CommandInfoViewSetStateMessage { type: "setState"; payload: { newState
 
 interface CommandInfoViewSubmitMessagePayload {
     action: "run" | "insert" | "copy";
-    commandName: string;
-    parameters: [name: string, value: string | boolean][];
+    expression: string;
 }
 
 /**
@@ -294,17 +293,9 @@ export class CommandInfoViewProvider implements vscode.WebviewViewProvider {
     /**
      * Process the run/insert/copy action requested from the webview.
      */
-    private async onSubmitMessage(payload: CommandInfoViewSubmitMessagePayload): Promise<void> {
-        // Build array of commandName, parameters and values, then join to create full expression string
-        const expression = [
-            payload.commandName,
-            ...payload.parameters
-                .flatMap(([name, value]) => [`-${name}`, value])
-                .filter(s => typeof(s) === "string"), // filter out non-string values for SwitchParameters
-        ].join(" ");
-
+    private async onSubmitMessage({ action, expression }: CommandInfoViewSubmitMessagePayload): Promise<void> {
         // Process action
-        switch(payload.action) {
+        switch(action) {
         case "run": {
             const client = await LanguageClientConsumer.getLanguageClient();
             await client.sendRequest(EvaluateRequestType, { expression });

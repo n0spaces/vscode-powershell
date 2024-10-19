@@ -67,7 +67,7 @@ const commonParameterNames = [
 ];
 
 function createParameterInputObject(parameter: CommandParameterInfo): CommandInfoParameterInput {
-    const isSwitch = parameter.parameterType.startsWith("System.Management.Automation.SwitchParameter");
+    const isSwitch = parameterTypeHelpers.isSwitch(parameter);
     const tooltip = `Type: ${parameter.parameterType.split(",")[0]}`
         + (parameter.position >= 0 ? `\nPosition: ${parameter.position}` : "")
         + (parameter.isMandatory ? "\nMandatory" : "\nOptional")
@@ -269,15 +269,86 @@ export class CommandInfoViewModel implements CommandInfoViewState {
         if (this.command === null) {
             throw new Error("this.command is null");
         }
+
         this.vscodeApi.postMessage({
             type: "submit",
             payload: {
                 action: action,
-                commandName: this.command.name,
-                parameters: this.parameterSetInputs[this.selectedParameterSet]
-                    .filter((parameterInput) => parameterInput.value)
-                    .map((parameterInput) => [parameterInput.name, parameterInput.value]),
+                expression: this.getScriptExpression(),
             }
         });
     }
+
+    /**
+     * Get the evaluable command expression for the current command and parameter inputs
+     */
+    getScriptExpression(): string {
+        if (this.command === null) {
+            throw new Error("this.command is null");
+        }
+
+        let commandName = this.command.name;
+        if (commandName.includes(" ")) {
+            commandName = `& "${commandName}"`;
+        }
+
+        const parameterSetInfo = this.command.parameterSets.find(ps => ps.name === this.selectedParameterSet);
+        if (parameterSetInfo === undefined) {
+            throw new Error(`No parameter set ${this.selectedParameterSet}`);
+        }
+
+        const parameterInputs = this.parameterSetInputs[this.selectedParameterSet];
+
+        // All parts of the command expression, including the command name and parameters/values
+        const scriptParts = [
+            commandName,
+            // Map switch parameter inputs to ["-Parameter"]
+            // and other parameter inputs to ["-Parameter", "Value"] if set
+            ...parameterInputs.flatMap((parameterInput): string[] => {
+                if (parameterInput.inputType === "checkbox") {
+                    return parameterInput.value ? [`-${parameterInput.name}`] : [];
+                }
+
+                const parameterInfo = parameterSetInfo.parameters.find(p => p.name === parameterInput.name);
+                if (parameterInfo === undefined) {
+                    throw new Error(`No parameter ${parameterInput.name} in parameter set ${parameterSetInfo.name}`);
+                }
+
+                let value = parameterInput.value.trim();
+                if (value === "") {
+                    return [];
+                }
+
+                // Surround value with quotes or curly braces as needed,
+                // unless value is surrounded by parentheses (it is probably an expression)
+                if (!value.match(/^\(.*\)$/)) {
+                    // Surround string value in quotes if it doesn't have them
+                    if (parameterTypeHelpers.isString(parameterInfo) && !value.match(/^('|").*\1$/)) {
+                        // Escape quotes with backtick
+                        value = `"${value.replaceAll("\"", "`\"")}"`;
+                    }
+                    // Surround ScriptBlock value in curly braces if it doesn't have them
+                    else if (parameterTypeHelpers.isScriptBlock(parameterInfo) && !value.match(/^{.*}$/)) {
+                        value = `{ ${value} }`;
+                    }
+                }
+
+                return [`-${parameterInput.name}`, value];
+            })
+        ];
+
+        return scriptParts.join(" ");
+    }
 }
+
+const parameterTypeHelpers = {
+    isString(parameter: CommandParameterInfo): boolean {
+        return parameter.parameterType.startsWith("System.String,");
+    },
+    isSwitch(parameter: CommandParameterInfo): boolean {
+        return parameter.parameterType.startsWith("System.Management.Automation.SwitchParameter,");
+    },
+    isScriptBlock(parameter: CommandParameterInfo): boolean {
+        return parameter.parameterType.startsWith("System.Management.Automation.ScriptBlock,");
+    }
+};

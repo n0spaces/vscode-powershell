@@ -430,8 +430,7 @@ describe("CommandInfoViewModel", function() {
             type: "submit",
             payload: {
                 action: "run",
-                commandName: "Import-FileWildcard",
-                parameters: [ ["Path", "foo.txt"], ["Verbose", true] ],
+                expression: "Import-FileWildcard -Path foo.txt -Verbose",
             },
         };
         sinon.assert.calledWith(fakeWebviewApi.postMessage, expectedRunMessage);
@@ -445,9 +444,8 @@ describe("CommandInfoViewModel", function() {
             type: "submit",
             payload: {
                 action: "insert",
-                commandName: "Import-FileWildcard",
                 // Should not include Verbose because it was unchecked
-                parameters: [ ["Path", "bar.txt"] ],
+                expression: "Import-FileWildcard -Path bar.txt",
             },
         };
         sinon.assert.calledWithMatch(fakeWebviewApi.postMessage, expectedInsertMessage);
@@ -463,12 +461,7 @@ describe("CommandInfoViewModel", function() {
             type: "submit",
             payload: {
                 action: "copy",
-                commandName: "Import-FileWildcard",
-                parameters: [
-                    ["LiteralPath", "baz.txt"],
-                    ["WhatIf", true],
-                    ["OutVariable", "myvar"],
-                ],
+                expression: "Import-FileWildcard -LiteralPath baz.txt -WhatIf -OutVariable \"myvar\"",
             },
         };
         sinon.assert.calledWith(fakeWebviewApi.postMessage, expectedCopyMessage);
@@ -532,5 +525,50 @@ describe("CommandInfoViewModel", function() {
 
         // vm should NOT call setState in the webview api
         sinon.assert.notCalled(fakeWebviewApi.setState);
+    });
+
+    it("Escapes quotes in string values", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        vm.onCommandChanged(sampleCommand);
+        vm.onParameterValueChanged("OutVariable", "how is this \"variable\" valid??");
+        // eslint-disable-next-line quotes
+        assert.strictEqual(vm.getScriptExpression(), 'Import-FileWildcard -OutVariable "how is this `"variable`" valid??"');
+
+        // Should not add quotes if the input value is alredy surrounded in quotes
+        vm.onParameterValueChanged("OutVariable", "\"my variable\"");
+        assert.strictEqual(vm.getScriptExpression(), "Import-FileWildcard -OutVariable \"my variable\"");
+
+        // Should not add quotes if value is contained in parentheses
+        vm.onParameterValueChanged("OutVariable", "  (Some-Expression) ");
+        assert.strictEqual(vm.getScriptExpression(), "Import-FileWildcard -OutVariable (Some-Expression)");
+    });
+
+    it("Surrounds ScriptBlock values with braces", function() {
+        const vm = new CommandInfoViewModel(fakeWebviewApi, fakeView);
+        vm.onCommandChanged({
+            name: "Where-Object",
+            moduleName: "Microsoft.PowerShell.Core",
+            defaultParameterSet: "ScriptBlockSet",
+            parameters: {},
+            parameterSets: [{
+                name: "ScriptBlockSet",
+                isDefault: true,
+                // @ts-expect-error partial parameter
+                parameters: [{
+                    name: "FilterScript",
+                    parameterType: "System.Management.Automation.ScriptBlock, blah blah blah",
+                }]
+            }]
+        });
+        vm.onParameterValueChanged("FilterScript", "$_ -eq foo    ");
+        assert.strictEqual(vm.getScriptExpression(), "Where-Object -FilterScript { $_ -eq foo }");
+
+        // Should not add curly braces if they already exist
+        vm.onParameterValueChanged("FilterScript", "{$_ -eq foo    }");
+        assert.strictEqual(vm.getScriptExpression(), "Where-Object -FilterScript {$_ -eq foo    }");
+
+        // Should not add curly braces if value is contained in parentheses
+        vm.onParameterValueChanged("FilterScript", "(Some-Expression)");
+        assert.strictEqual(vm.getScriptExpression(), "Where-Object -FilterScript (Some-Expression)");
     });
 });

@@ -45,8 +45,7 @@ describe("GetCommands feature", function() {
                 type: "submit",
                 payload: {
                     action: "insert",
-                    commandName: "Invoke-Example",
-                    parameters: [["Switch", true], ["Foo", "$Bar"]],
+                    expression: "Invoke-Example -Switch -Foo $Bar",
                 },
             });
 
@@ -62,8 +61,7 @@ describe("GetCommands feature", function() {
                 type: "submit",
                 payload: {
                     action: "copy",
-                    commandName: "ConvertTo-Json",
-                    parameters: [["InputObject", "foo,bar,baz"], ["Compress", true]],
+                    expression: "ConvertTo-Json -InputObject foo,bar,baz -Compress",
                 }
             });
             const clipboardText = await vscode.env.clipboard.readText();
