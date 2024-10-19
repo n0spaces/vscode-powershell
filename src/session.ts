@@ -351,6 +351,7 @@ export class SessionManager implements Middleware {
                 this.PowerShellExeDetails.exePath,
                 bundledModulesPath,
                 true,
+                false,
                 this.logger,
                 this.getEditorServicesArgs(bundledModulesPath, this.PowerShellExeDetails) + "-DebugServiceOnly ",
                 this.getNewSessionFilePath(),
@@ -536,6 +537,7 @@ export class SessionManager implements Middleware {
                 powerShellExeDetails.exePath,
                 bundledModulesPath,
                 false,
+                this.shellIntegrationEnabled,
                 this.logger,
                 this.getEditorServicesArgs(bundledModulesPath, powerShellExeDetails),
                 this.getNewSessionFilePath(),
@@ -621,8 +623,6 @@ export class SessionManager implements Middleware {
                         });
                 });
         };
-
-
         const clientOptions: LanguageClientOptions = {
             documentSelector: this.documentSelector,
             synchronize: {
@@ -658,6 +658,7 @@ export class SessionManager implements Middleware {
             },
             revealOutputChannelOn: RevealOutputChannelOn.Never,
             middleware: this,
+            traceOutputChannel: vscode.window.createOutputChannel("PowerShell Trace - LSP", {log: true}),
         };
 
         const languageClient = new LanguageClient("powershell", "PowerShell Editor Services Client", connectFunc, clientOptions);
